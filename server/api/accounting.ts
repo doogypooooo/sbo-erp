@@ -735,3 +735,53 @@ accountingRouter.put("/tax-invoices/:id/status", checkPermission('tax', 'write')
     next(error);
   }
 });
+
+// 손익계산서 API
+accountingRouter.get("/statements/income", checkPermission('statements', 'read'), async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    // 예시: 매출/비용 계정과목별 집계 (실제 로직은 상세화 필요)
+    const revenue = await storage.getAccountSums('revenue', from as string, to as string);
+    const expenses = await storage.getAccountSums('expense', from as string, to as string);
+    const totalRevenue = revenue.reduce((sum, r) => sum + (r.amount || 0), 0);
+    const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    res.json({ revenue, totalRevenue, expenses, totalExpenses });
+  } catch (error) { next(error); }
+});
+
+// 재무상태표 API
+accountingRouter.get("/statements/balance", checkPermission('statements', 'read'), async (req, res, next) => {
+  try {
+    const { date } = req.query;
+    // 예시: 자산/부채/자본 계정과목별 집계 (실제 로직은 상세화 필요)
+    const currentAssets = await storage.getAccountSums('asset', null, date as string, { current: true });
+    const nonCurrentAssets = await storage.getAccountSums('asset', null, date as string, { current: false });
+    const currentLiabilities = await storage.getAccountSums('liability', null, date as string, { current: true });
+    const nonCurrentLiabilities = await storage.getAccountSums('liability', null, date as string, { current: false });
+    const equity = await storage.getAccountSums('equity', null, date as string);
+    res.json({ currentAssets, nonCurrentAssets, currentLiabilities, nonCurrentLiabilities, equity });
+  } catch (error) { next(error); }
+});
+
+// 현금흐름표 API
+accountingRouter.get("/statements/cashflow", checkPermission('statements', 'read'), async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    // 예시: 간단 집계 (실제 로직은 상세화 필요)
+    const beginningCash = await storage.getBeginningCash(from as string);
+    const operatingActivities = await storage.getCashFlow('operating', from as string, to as string);
+    const investingActivities = await storage.getCashFlow('investing', from as string, to as string);
+    const financingActivities = await storage.getCashFlow('financing', from as string, to as string);
+    res.json({ beginningCash, operatingActivities, investingActivities, financingActivities });
+  } catch (error) { next(error); }
+});
+
+// 월별 매출/비용 차트 API
+accountingRouter.get("/monthly", checkPermission('statements', 'read'), async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    if (!from || !to) return res.json([]);
+    const result = await storage.getMonthlyRevenueExpenses(from as string, to as string);
+    res.json(result);
+  } catch (error) { next(error); }
+});

@@ -12,7 +12,7 @@ import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { db } from './db';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gte, lte } from 'drizzle-orm';
 
 const MemoryStore = createMemoryStore(session);
 
@@ -89,6 +89,17 @@ export interface IStorage {
   getTaxInvoices(type?: string): Promise<TaxInvoice[]>;
   getTaxInvoice(id: number): Promise<TaxInvoice | undefined>;
   updateTaxInvoice(id: number, taxInvoice: Partial<TaxInvoice>): Promise<TaxInvoice | undefined>;
+
+  // 계정과목 유형별 합계 집계 (재무제표용)
+  getAccountSums(type: string, from?: string, to?: string, options?: { current?: boolean }): Promise<{ name: string, amount: number }[]>;
+  // 기초 현금 및 현금성 자산 집계
+  getBeginningCash(date: string): Promise<number>;
+
+  // 활동별 현금흐름 집계 (예시: 계정명 키워드로 분류)
+  getCashFlow(type: 'operating' | 'investing' | 'financing', from: string, to: string): Promise<{ name: string, amount: number }[]>;
+
+  // 월별 매출/비용 집계
+  getMonthlyRevenueExpenses(from: string, to: string): Promise<{ month: string, revenue: number, expenses: number }[]>;
 }
 
 // SQLiteStorage 구현
@@ -563,6 +574,94 @@ export class SQLiteStorage implements IStorage {
   async updateTaxInvoice(id: number, taxInvoice: Partial<TaxInvoice>): Promise<TaxInvoice | undefined> {
     await this.db.update(taxInvoices).set(taxInvoice).where(eq(taxInvoices.id, id));
     return await this.getTaxInvoice(id);
+  }
+
+  // 계정과목 유형별 합계 집계 (재무제표용)
+  async getAccountSums(type: string, from?: string, to?: string, options?: { current?: boolean }): Promise<{ name: string, amount: number }[]> {
+    // 계정과목 목록 조회 (유형별)
+    let accountList = await this.db.select().from(accounts).where(eq(accounts.type, type));
+    if (options && typeof options.current === 'boolean') {
+      accountList = accountList.filter(acc => options.current ? acc.name.includes('유동') : !acc.name.includes('유동'));
+    }
+    if (!accountList.length) return [];
+    // 전표 항목에서 계정별 합계 집계
+    const result: { name: string, amount: number }[] = [];
+    for (const acc of accountList) {
+      // 전표 항목에서 계정별 합계 집계
+      let items = await this.db.select().from(voucherItems)
+        .innerJoin(vouchers, eq(voucherItems.voucherId, vouchers.id))
+        .where(eq(voucherItems.accountId, acc.id));
+      // 기간 필터: from~to
+      if (from) items = items.filter(row => row.vouchers.date >= from);
+      if (to) items = items.filter(row => row.vouchers.date <= to);
+      const sum = items.reduce((s, row) => s + (row.voucher_items.amount || 0), 0);
+      result.push({ name: acc.name, amount: sum });
+    }
+    return result;
+  }
+
+  // 기초 현금 및 현금성 자산 집계
+  async getBeginningCash(date: string): Promise<number> {
+    // '자산' 유형 중 계정명에 '현금'이 포함된 계정
+    const cashAccounts = await this.db.select().from(accounts).where(eq(accounts.type, 'asset'));
+    const cashAccountIds = cashAccounts.filter(a => a.name.includes('현금')).map(a => a.id);
+    if (cashAccountIds.length === 0) return 0;
+    let sum = 0;
+    for (const accId of cashAccountIds) {
+      const items = await this.db.select().from(voucherItems)
+        .innerJoin(vouchers, eq(voucherItems.voucherId, vouchers.id))
+        .where(eq(voucherItems.accountId, accId));
+      const filtered = items.filter(row => row.vouchers.date < date);
+      sum += filtered.reduce((s, row) => s + (row.voucher_items.amount || 0), 0);
+    }
+    return sum;
+  }
+
+  // 활동별 현금흐름 집계 (예시: 계정명 키워드로 분류)
+  async getCashFlow(type: 'operating' | 'investing' | 'financing', from: string, to: string): Promise<{ name: string, amount: number }[]> {
+    // 활동별 키워드 매핑 (실제 분류는 계정코드/분류 등으로 상세화 필요)
+    const keywords = {
+      operating: ['영업'],
+      investing: ['투자'],
+      financing: ['재무']
+    };
+    const keywordList = keywords[type] || [];
+    // 자산/부채/자본/수익/비용 전체 계정 중 해당 키워드 포함 계정만
+    const allAccounts = await this.db.select().from(accounts);
+    const filteredAccounts = allAccounts.filter(a => keywordList.some(k => a.name.includes(k)));
+    if (!filteredAccounts.length) return [];
+    const result: { name: string, amount: number }[] = [];
+    for (const acc of filteredAccounts) {
+      let items = await this.db.select().from(voucherItems)
+        .innerJoin(vouchers, eq(voucherItems.voucherId, vouchers.id))
+        .where(eq(voucherItems.accountId, acc.id));
+      items = items.filter(row => row.vouchers.date >= from && row.vouchers.date <= to);
+      const sum = items.reduce((s, row) => s + (row.voucher_items.amount || 0), 0);
+      result.push({ name: acc.name, amount: sum });
+    }
+    return result;
+  }
+
+  // 월별 매출/비용 집계
+  async getMonthlyRevenueExpenses(from: string, to: string): Promise<{ month: string, revenue: number, expenses: number }[]> {
+    const accountsList = await this.getAccounts();
+    const revenueAccountIds = accountsList.filter(a => a.type === 'revenue').map(a => a.id);
+    const expenseAccountIds = accountsList.filter(a => a.type === 'expense').map(a => a.id);
+    const items = await this.db.select().from(voucherItems)
+      .innerJoin(vouchers, eq(voucherItems.voucherId, vouchers.id));
+    const filtered = items.filter(row => row.vouchers.date >= from && row.vouchers.date <= to);
+    const monthlyMap = new Map();
+    for (const row of filtered) {
+      const month = row.vouchers.date.slice(0, 7);
+      if (!monthlyMap.has(month)) monthlyMap.set(month, { month, revenue: 0, expenses: 0 });
+      if (revenueAccountIds.includes(row.voucher_items.accountId)) {
+        monthlyMap.get(month).revenue += row.voucher_items.amount || 0;
+      }
+      if (expenseAccountIds.includes(row.voucher_items.accountId)) {
+        monthlyMap.get(month).expenses += row.voucher_items.amount || 0;
+      }
+    }
+    return Array.from(monthlyMap.values()).sort((a, b) => a.month.localeCompare(b.month));
   }
 }
 

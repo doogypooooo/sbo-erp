@@ -108,10 +108,10 @@ export default function StatementsPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar />
+      <Sidebar className="no-print" />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
+        <Header className="no-print" />
         
         <main className="flex-1 overflow-y-auto bg-gray-50 p-6">
           <div className="space-y-6">
@@ -182,7 +182,7 @@ export default function StatementsPage() {
                 </div>
                 <Button 
                   onClick={handlePrint}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 no-print"
                 >
                   <Printer className="h-4 w-4" />
                   인쇄
