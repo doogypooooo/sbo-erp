@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-auth";
@@ -46,7 +46,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Search, Download, AlertCircle, History, RotateCw, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Search, Download, AlertCircle, History, RotateCw, ChevronDown, ChevronUp, MoreHorizontal, Pencil } from "lucide-react";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { Upload } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 
 export default function InventoryPage() {
   // 권한 확인
@@ -68,6 +72,8 @@ export default function InventoryPage() {
   const pageSize = 10;
   
   const { toast } = useToast();
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // 카테고리 데이터 조회
   const { data: categories } = useQuery({
@@ -257,6 +263,53 @@ export default function InventoryPage() {
     setIsAdjustDialogOpen(true);
   };
 
+  // 엑셀 다운로드 함수 (현황/이력 분기)
+  function handleExcelDownload() {
+    if (activeTab === "history" && itemHistory && itemHistory.length > 0) {
+      const data = itemHistory.map((h: any) => ({
+        일시: h.createdAt,
+        유형: h.transactionType,
+        변경전: h.quantityBefore,
+        변경후: h.quantityAfter,
+        변화량: h.change,
+        문서번호: h.transactionId,
+        담당자: h.createdByName,
+        비고: h.notes,
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "InventoryHistory");
+      XLSX.writeFile(wb, "inventory-history.xlsx");
+      return;
+    }
+    // 기본: 재고 현황 다운로드
+    const data = inventory?.map((item: any) => ({
+      itemId: item.itemId,
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      categoryName: item.categoryName,
+      quantity: item.quantity,
+      unit: item.unit,
+      minStockLevel: item.minStockLevel,
+      isLow: item.isLow,
+    })) || [];
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+    XLSX.writeFile(wb, "inventory.xlsx");
+  }
+
+  // 새로고침 핸들러 (탭에 따라 분기)
+  function handleRefresh() {
+    if (activeTab === "history" && selectedItem) {
+      // 재고이력 탭: 이력만 refetch
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory", selectedItem, "history"] });
+    } else {
+      // 재고현황 등: 전체 재고 refetch
+      refetch();
+    }
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -294,19 +347,27 @@ export default function InventoryPage() {
                 부족 재고만
               </Button>
               
-              {/* 재고 새로고침 버튼 */}
-              <Button variant="outline" onClick={() => refetch()}>
-                <RotateCw className="h-4 w-4 mr-2" />
-                새로고침
-              </Button>
-              
-              {/* 엑셀 다운로드 버튼 */}
-              {canExport && (
-                <Button variant="outline">
-                  <Download className="h-4 w-4 mr-2" />
-                  엑셀 다운로드
-                </Button>
-              )}
+              {/* 새로고침/엑셀다운로드 두버튼 모드 */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button type="button" variant="outline" size="icon" onClick={handleRefresh}>
+                      <RotateCw className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>새로고침</TooltipContent>
+                </Tooltip>
+                {canExport && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button type="button" variant="outline" size="icon" onClick={handleExcelDownload}>
+                        <Download className="h-5 w-5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{activeTab === "history" ? "이력 엑셀 다운로드" : "엑셀 다운로드"}</TooltipContent>
+                  </Tooltip>
+                )}
+              </TooltipProvider>
             </div>
           </div>
           
@@ -462,25 +523,23 @@ export default function InventoryPage() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => handleViewHistory(item.itemId)}
-                              >
-                                <History className="h-4 w-4 mr-1" />
-                                이력
-                              </Button>
-                              {canWrite && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => openAdjustDialog(item.itemId, item.quantity)}
-                                >
-                                  조정
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="w-5 h-5" />
                                 </Button>
-                              )}
-                            </div>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewHistory(item.itemId)}>
+                                  <History className="h-4 w-4 mr-2" /> 이력
+                                </DropdownMenuItem>
+                                {canWrite && (
+                                  <DropdownMenuItem onClick={() => openAdjustDialog(item.itemId, item.quantity)}>
+                                    <Pencil className="h-4 w-4 mr-2" /> 조정
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))

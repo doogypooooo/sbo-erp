@@ -60,7 +60,7 @@ export interface IStorage {
   getTransaction(id: number): Promise<Transaction | undefined>;
   getTransactionItems(transactionId: number): Promise<TransactionItem[]>;
   getTransactions(type?: string, status?: string): Promise<Transaction[]>;
-  updateTransaction(id: number, transaction: Partial<Transaction>): Promise<Transaction | undefined>;
+  updateTransaction(id: number, transaction: Partial<Transaction> & { items?: InsertTransactionItem[] }): Promise<Transaction | undefined>;
   deleteTransaction(id: number): Promise<boolean>;
 
   // 회계 관리
@@ -263,6 +263,16 @@ export class SQLiteStorage implements IStorage {
   // 거래 관리
   async createTransaction(transaction: InsertTransaction, items: InsertTransactionItem[]): Promise<Transaction> {
     return this.db.transaction((tx) => {
+      // 판매/출고 재고 체크
+      if (transaction.type === 'sale') {
+        for (const item of items) {
+          const inv = tx.select().from(inventory).where(eq(inventory.itemId, item.itemId)).get();
+          const beforeQty = inv?.quantity ?? 0;
+          if (Number(item.quantity) > beforeQty) {
+            throw new Error(`재고 부족: 품목ID ${item.itemId} (현재 재고: ${beforeQty}, 출고 수량: ${item.quantity})`);
+          }
+        }
+      }
       // 트랜잭션 생성
       const { lastInsertRowid } = tx.insert(transactions).values(transaction).run();
       const transactionId = Number(lastInsertRowid);
@@ -270,7 +280,32 @@ export class SQLiteStorage implements IStorage {
       const txRow = tx.select().from(transactions).where(eq(transactions.id, transactionId)).get();
       for (const item of items) {
         tx.insert(transactionItems).values({ ...item, transactionId }).run();
+        // 재고 차감 및 이력 기록 (판매/출고일 때만)
+        if (transaction.type === 'sale') {
+          // 현재 재고 조회
+          const inv = tx.select().from(inventory).where(eq(inventory.itemId, item.itemId)).get();
+          const beforeQty = inv?.quantity ?? 0;
+          const afterQty = beforeQty - Number(item.quantity);
+          // 재고 차감
+          if (inv) {
+            tx.update(inventory).set({ quantity: afterQty }).where(eq(inventory.itemId, item.itemId)).run();
+          } else {
+            tx.insert(inventory).values({ itemId: item.itemId, quantity: afterQty }).run();
+          }
+          // 이력 기록
+          tx.insert(inventoryHistory).values({
+            itemId: item.itemId,
+            transactionType: 'sale',
+            transactionId,
+            quantityBefore: beforeQty,
+            quantityAfter: afterQty,
+            change: -Number(item.quantity),
+            notes: `판매/출고 등록`,
+            createdAt: new Date().toISOString(),
+          }).run();
+        }
       }
+      if (!txRow) throw new Error('Transaction row not found after insert');
       return txRow;
     });
   }
@@ -295,15 +330,109 @@ export class SQLiteStorage implements IStorage {
     return await this.db.select().from(transactions);
   }
 
-  async updateTransaction(id: number, transaction: Partial<Transaction>): Promise<Transaction | undefined> {
-    await this.db.update(transactions).set(transaction).where(eq(transactions.id, id));
-    return await this.getTransaction(id);
+  async updateTransaction(id: number, transaction: Partial<Transaction> & { items?: InsertTransactionItem[] }): Promise<Transaction | undefined> {
+    return this.db.transaction((tx) => {
+      // 기존 거래 및 품목 조회
+      const oldTx = tx.select().from(transactions).where(eq(transactions.id, id)).get();
+      const oldItems = tx.select().from(transactionItems).where(eq(transactionItems.transactionId, id)).all();
+      // 판매/출고 재고 체크 (변화량 기준)
+      if ((transaction.type || oldTx?.type) === 'sale') {
+        const oldMap = new Map();
+        for (const oi of oldItems) oldMap.set(oi.itemId, oi.quantity);
+        const newItems = transaction.items || [];
+        const newMap = new Map();
+        for (const ni of newItems) newMap.set(ni.itemId, ni.quantity);
+        const allItemIds = new Set([...Array.from(oldMap.keys()), ...Array.from(newMap.keys())]);
+        for (const itemId of Array.from(allItemIds)) {
+          const beforeInv = tx.select().from(inventory).where(eq(inventory.itemId, itemId)).get();
+          const beforeQty = beforeInv?.quantity ?? 0;
+          const oldQty = oldMap.get(itemId) ?? 0;
+          const newQty = newMap.get(itemId) ?? 0;
+          const diff = newQty - oldQty; // +면 출고 증가, -면 출고 감소(복원)
+          if (diff > 0 && diff > beforeQty) {
+            throw new Error(`재고 부족: 품목ID ${itemId} (현재 재고: ${beforeQty}, 출고 증가분: ${diff})`);
+          }
+        }
+      }
+      // 거래 수정
+      tx.update(transactions).set(transaction).where(eq(transactions.id, id)).run();
+      // 기존 품목 삭제
+      tx.delete(transactionItems).where(eq(transactionItems.transactionId, id)).run();
+      // 새 품목 삽입
+      const newItems = transaction.items || [];
+      for (const item of newItems) {
+        tx.insert(transactionItems).values({ ...item, transactionId: id }).run();
+      }
+      // 재고/이력 처리 (판매/출고)
+      if ((transaction.type || oldTx?.type) === 'sale') {
+        // 품목별 변화량 계산: (신규 - 기존)
+        const oldMap = new Map();
+        for (const oi of oldItems) oldMap.set(oi.itemId, oi.quantity);
+        const newMap = new Map();
+        for (const ni of newItems) newMap.set(ni.itemId, ni.quantity);
+        const allItemIds = new Set([...Array.from(oldMap.keys()), ...Array.from(newMap.keys())]);
+        for (const itemId of Array.from(allItemIds)) {
+          const beforeInv = tx.select().from(inventory).where(eq(inventory.itemId, itemId)).get();
+          const beforeQty = beforeInv?.quantity ?? 0;
+          const oldQty = oldMap.get(itemId) ?? 0;
+          const newQty = newMap.get(itemId) ?? 0;
+          const diff = newQty - oldQty; // +면 출고 증가, -면 출고 감소(복원)
+          if (diff !== 0) {
+            const afterQty = beforeQty - diff;
+            if (beforeInv) {
+              tx.update(inventory).set({ quantity: afterQty }).where(eq(inventory.itemId, itemId)).run();
+            } else {
+              tx.insert(inventory).values({ itemId, quantity: afterQty }).run();
+            }
+            tx.insert(inventoryHistory).values({
+              itemId,
+              transactionType: 'sale',
+              transactionId: id,
+              quantityBefore: beforeQty,
+              quantityAfter: afterQty,
+              change: -diff,
+              notes: `판매/출고 수정`,
+              createdAt: new Date().toISOString(),
+            }).run();
+          }
+        }
+      }
+      return tx.select().from(transactions).where(eq(transactions.id, id)).get();
+    });
   }
 
   async deleteTransaction(id: number): Promise<boolean> {
     return this.db.transaction((tx) => {
+      // 거래 및 품목 조회
+      const txRow = tx.select().from(transactions).where(eq(transactions.id, id)).get();
+      const items = tx.select().from(transactionItems).where(eq(transactionItems.transactionId, id)).all();
+      // 품목 삭제
       tx.delete(transactionItems).where(eq(transactionItems.transactionId, id)).run();
+      // 거래 삭제
       const result = tx.delete(transactions).where(eq(transactions.id, id)).run();
+      // 재고/이력 복원 (판매/출고)
+      if (txRow?.type === 'sale') {
+        for (const item of items) {
+          const beforeInv = tx.select().from(inventory).where(eq(inventory.itemId, item.itemId)).get();
+          const beforeQty = beforeInv?.quantity ?? 0;
+          const afterQty = beforeQty + Number(item.quantity);
+          if (beforeInv) {
+            tx.update(inventory).set({ quantity: afterQty }).where(eq(inventory.itemId, item.itemId)).run();
+          } else {
+            tx.insert(inventory).values({ itemId: item.itemId, quantity: afterQty }).run();
+          }
+          tx.insert(inventoryHistory).values({
+            itemId: item.itemId,
+            transactionType: 'sale_cancel',
+            transactionId: id,
+            quantityBefore: beforeQty,
+            quantityAfter: afterQty,
+            change: Number(item.quantity),
+            notes: `판매/출고 취소`,
+            createdAt: new Date().toISOString(),
+          }).run();
+        }
+      }
       return result.changes > 0;
     });
   }

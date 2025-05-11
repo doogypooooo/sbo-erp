@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { storage } from "../storage";
 import { z } from "zod";
+import { inventoryHistory, inventory } from "@shared/schema";
+import { db } from "../db";
+import { eq } from "drizzle-orm";
 
 export const inventoryRouter = Router();
 
@@ -38,17 +41,19 @@ const checkPermission = (action: 'read' | 'write' | 'delete' | 'export') => asyn
 // 모든 품목의 재고 조회
 inventoryRouter.get("/", checkPermission('read'), async (req, res, next) => {
   try {
-    // 모든 품목 가져오기
     const items = await storage.getItems();
-    
+    const categories = await storage.getCategories();
     // 각 품목의 재고 정보 조회
     const inventoryData = await Promise.all(
       items.map(async (item) => {
         const inventory = await storage.getInventory(item.id);
+        const category = categories.find(c => c.id === item.categoryId);
         return {
           itemId: item.id,
           itemCode: item.code,
           itemName: item.name,
+          categoryName: category ? category.name : "-",
+          unitPrice: item.unitPrice,
           quantity: inventory?.quantity || 0,
           unit: item.unit,
           minStockLevel: item.minStockLevel,
@@ -56,7 +61,6 @@ inventoryRouter.get("/", checkPermission('read'), async (req, res, next) => {
         };
       })
     );
-    
     res.json(inventoryData);
   } catch (error) {
     next(error);
@@ -84,9 +88,9 @@ inventoryRouter.get("/:itemId", checkPermission('read'), async (req, res, next) 
       item,
       stock: inventory?.quantity || 0,
       isLow: (inventory?.quantity || 0) < (item.minStockLevel || 0),
-      lastUpdated: inventory?.updatedAt,
+      lastUpdated: inventory?.updatedAt ? new Date(inventory.updatedAt) : undefined,
       history: history.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime()
       )
     });
   } catch (error) {
@@ -111,18 +115,31 @@ inventoryRouter.post("/:itemId/adjust", checkPermission('write'), async (req, re
       return res.status(400).json({ message: "유효하지 않은 수량입니다." });
     }
     
-    // 재고 업데이트
-    const updatedInventory = await storage.updateInventory(itemId, quantity);
-    
+    // 트랜잭션으로 재고 업데이트 + 이력 기록 (동기 트랜잭션)
+    const beforeInv = await storage.getInventory(itemId);
+    const beforeQty = beforeInv?.quantity ?? 0;
+    db.transaction((tx) => {
+      tx.update(inventory).set({ quantity }).where(eq(inventory.itemId, itemId)).run();
+      tx.insert(inventoryHistory).values({
+        itemId,
+        transactionType: 'adjustment',
+        transactionId: null,
+        quantityBefore: beforeQty,
+        quantityAfter: quantity,
+        change: quantity - beforeQty,
+        notes,
+        createdAt: new Date().toISOString(),
+        // createdBy: req.user.id (로그인 정보가 있다면)
+      }).run();
+    });
     // 재고 이력 확인
     const history = await storage.getInventoryHistory(itemId);
     const latestHistory = history.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime()
     )[0];
-    
     res.json({
       item,
-      stock: updatedInventory.quantity,
+      stock: quantity,
       history: latestHistory
     });
   } catch (error) {
@@ -146,7 +163,7 @@ inventoryRouter.get("/:itemId/history", checkPermission('read'), async (req, res
     
     // 정렬: 최신순
     const sortedHistory = history.sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime()
     );
     
     res.json(sortedHistory);
@@ -173,6 +190,7 @@ inventoryRouter.get("/alerts/low", checkPermission('read'), async (req, res, nex
             itemId: item.id,
             itemCode: item.code,
             itemName: item.name,
+            unitPrice: item.unitPrice,
             quantity,
             minStockLevel: item.minStockLevel,
             unit: item.unit,

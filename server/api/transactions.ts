@@ -38,8 +38,11 @@ transactionsRouter.post("/", async (req, res) => {
   try {
     const tx = await storage.createTransaction(transaction, transaction.items || []);
     res.status(201).json({ message: "거래가 저장되었습니다.", transaction: tx });
-  } catch (err) {
+  } catch (err: any) {
     logErrorToFile("[POST /api/transactions] DB ERROR:", err);
+    if (err?.message && err.message.startsWith('재고 부족')) {
+      return res.status(400).json({ message: err.message });
+    }
     res.status(500).json({ message: "거래 저장 중 오류가 발생했습니다." });
   }
 });
@@ -49,7 +52,12 @@ transactionsRouter.get("/", async (req, res) => {
   try {
     const { type, status } = req.query;
     const txs = await storage.getTransactions(type as string | undefined, status as string | undefined);
-    res.json(txs);
+    const partners = await storage.getPartners();
+    const txsWithPartnerName = txs.map(tx => {
+      const partner = partners.find(p => p.id === tx.partnerId);
+      return { ...tx, partnerName: partner ? partner.name : "" };
+    });
+    res.json(txsWithPartnerName);
   } catch (err) {
     logErrorToFile("[GET /api/transactions] DB ERROR:", err);
     res.status(500).json({ message: "거래 목록 조회 중 오류가 발생했습니다." });
@@ -90,36 +98,13 @@ transactionsRouter.put("/:id", async (req, res) => {
   transaction.status = transaction.status || "pending";
   try {
     // 트랜잭션으로 처리: 본문 transaction, items 모두 갱신
-    const updated = await storage["db"].transaction((tx: any) => {
-      // 거래 수정
-      tx.update(transactions).set({
-        partnerId: transaction.partnerId,
-        date: transaction.date,
-        status: transaction.status,
-        notes: transaction.notes,
-        totalAmount: transaction.totalAmount,
-        taxAmount: transaction.taxAmount,
-        type: transaction.type,
-      }).where(eq(transactions.id, id)).run();
-      // 기존 품목 삭제
-      tx.delete(transactionItems).where(eq(transactionItems.transactionId, id)).run();
-      // 새 품목 삽입
-      for (const item of transaction.items || []) {
-        tx.insert(transactionItems).values({
-          transactionId: id,
-          itemId: Number(item.itemId),
-          quantity: Number(item.quantity),
-          unitPrice: Number(item.unitPrice ?? item.price),
-          amount: Number(item.amount),
-          taxAmount: Number(item.taxAmount),
-        }).run();
-      }
-      // 결과 반환
-      return tx.select().from(transactions).where(eq(transactions.id, id)).get();
-    });
+    const updated = await storage.updateTransaction(id, transaction);
     res.json({ message: "거래가 수정되었습니다.", transaction: updated });
-  } catch (err) {
+  } catch (err: any) {
     logErrorToFile("[PUT /api/transactions/:id] DB ERROR:", err);
+    if (err?.message && err.message.startsWith('재고 부족')) {
+      return res.status(400).json({ message: err.message });
+    }
     res.status(500).json({ message: "거래 수정 중 오류가 발생했습니다." });
   }
 });
@@ -127,7 +112,8 @@ transactionsRouter.put("/:id", async (req, res) => {
 // 엑셀 다운로드 (거래+품목 펼침)
 transactionsRouter.get('/export', async (req, res) => {
   try {
-    const txs = await storage.getTransactions('purchase');
+    const type = req.query.type === 'sale' ? 'sale' : 'purchase';
+    const txs = await storage.getTransactions(type);
     let rows: any[] = [];
     const partners = await storage.getPartners();
     for (const tx of txs) {
@@ -144,9 +130,9 @@ transactionsRouter.get('/export', async (req, res) => {
         }
         rows.push({
           거래ID: tx.id,
-          구매번호: tx.code,
+          번호: tx.code,
           거래처: partnerName,
-          입고일자: tx.date,
+          일자: tx.date,
           상태: tx.status,
           품목명: itemName,
           수량: item.quantity,
@@ -159,9 +145,9 @@ transactionsRouter.get('/export', async (req, res) => {
     }
     const ws = xlsx.utils.json_to_sheet(rows);
     const wb = xlsx.utils.book_new();
-    xlsx.utils.book_append_sheet(wb, ws, '구매입고');
+    xlsx.utils.book_append_sheet(wb, ws, type === 'sale' ? '판매출고' : '구매입고');
     const buf = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    res.setHeader('Content-Disposition', 'attachment; filename="purchases.xlsx"');
+    res.setHeader('Content-Disposition', `attachment; filename="${type === 'sale' ? 'sales' : 'purchases'}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.send(buf);
   } catch (err) {
@@ -172,20 +158,21 @@ transactionsRouter.get('/export', async (req, res) => {
 // 엑셀 업로드 (거래+품목 펼침)
 transactionsRouter.post('/import', upload.single('file'), async (req, res) => {
   try {
+    const type = req.query.type === 'sale' ? 'sale' : 'purchase';
     const filePath = (req.file as any).path;
     const wb = xlsx.readFile(filePath);
     const ws = wb.Sheets[wb.SheetNames[0]];
     const data = xlsx.utils.sheet_to_json(ws);
-    // 거래ID/구매번호로 그룹핑
+    // 거래ID/번호로 그룹핑
     const txMap = new Map();
     for (const rowAny of data as any[]) {
       const row = rowAny as any;
-      const txKey = row['구매번호'] || row['거래ID'] || row['코드'];
+      const txKey = row['번호'] || row['구매번호'] || row['거래ID'] || row['코드'];
       if (!txMap.has(txKey)) {
         txMap.set(txKey, {
-          code: row['구매번호'] || row['코드'],
+          code: row['번호'] || row['구매번호'] || row['코드'],
           partnerName: row['거래처'],
-          date: row['입고일자'],
+          date: row['일자'] || row['입고일자'],
           status: row['상태'],
           notes: row['메모'] ?? '',
           items: [],
@@ -219,7 +206,7 @@ transactionsRouter.post('/import', upload.single('file'), async (req, res) => {
       if (items.length === 0) continue;
 
       // 중복 코드 처리: 있으면 update, 없으면 insert
-      const existing = await storage.getTransactions('purchase');
+      const existing = await storage.getTransactions(type);
       const found = existing.find((t: any) => t.code === tx.code);
       if (found) {
         // update 거래
@@ -228,7 +215,7 @@ transactionsRouter.post('/import', upload.single('file'), async (req, res) => {
           date: tx.date,
           status: tx.status,
           notes: tx.notes,
-          type: 'purchase',
+          type,
         });
         // 기존 품목 삭제 후 재등록
         await storage["db"].delete(transactionItems).where(eq(transactionItems.transactionId, found.id)).run();
@@ -246,7 +233,7 @@ transactionsRouter.post('/import', upload.single('file'), async (req, res) => {
           date: tx.date,
           status: tx.status,
           notes: tx.notes,
-          type: 'purchase',
+          type,
         }, items);
       }
     }
