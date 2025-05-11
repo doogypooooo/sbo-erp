@@ -212,6 +212,8 @@ export const voucherItems = sqliteTable('voucher_items', {
 // 수금/지급 관리 테이블
 export const payments = sqliteTable('payments', {
   id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+  code: text('code').notNull(),
+  reference: text('reference'),
   transactionId: integer('transaction_id', { mode: 'number' }).references(() => transactions.id),
   voucherId: integer('voucher_id', { mode: 'number' }).references(() => vouchers.id),
   partnerId: integer('partner_id', { mode: 'number' }).notNull().references(() => partners.id),
@@ -351,6 +353,8 @@ export const insertVoucherItemSchema = createInsertSchema(voucherItems).pick({
 });
 
 export const insertPaymentSchema = createInsertSchema(payments).pick({
+  code: true,
+  reference: true,
   transactionId: true,
   voucherId: true,
   partnerId: true,

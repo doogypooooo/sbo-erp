@@ -82,6 +82,7 @@ export interface IStorage {
   getPayments(partnerId?: number): Promise<Payment[]>;
   getPayment(id: number): Promise<Payment | undefined>;
   updatePayment(id: number, payment: Partial<Payment>): Promise<Payment | undefined>;
+  deletePayment(id: number): Promise<boolean>;
 
   // 세금계산서 관리
   createTaxInvoice(taxInvoice: InsertTaxInvoice): Promise<TaxInvoice>;
@@ -533,6 +534,11 @@ export class SQLiteStorage implements IStorage {
   async updatePayment(id: number, payment: Partial<Payment>): Promise<Payment | undefined> {
     await this.db.update(payments).set(payment).where(eq(payments.id, id));
     return await this.getPayment(id);
+  }
+
+  async deletePayment(id: number): Promise<boolean> {
+    const result = await this.db.delete(payments).where(eq(payments.id, id));
+    return Array.isArray(result) ? result.length > 0 : !!result;
   }
 
   // 세금계산서 관리
