@@ -74,7 +74,7 @@ export interface IStorage {
   getVoucher(id: number): Promise<Voucher | undefined>;
   getVoucherItems(voucherId: number): Promise<VoucherItem[]>;
   getVouchers(type?: string, status?: string): Promise<Voucher[]>;
-  updateVoucher(id: number, voucher: Partial<Voucher>): Promise<Voucher | undefined>;
+  updateVoucher(id: number, voucher: Partial<Voucher> & { items?: InsertVoucherItem[] }): Promise<Voucher | undefined>;
 
   // 수금/지급 관리
   createPayment(payment: InsertPayment): Promise<Payment>;
@@ -490,8 +490,14 @@ export class SQLiteStorage implements IStorage {
     return await this.db.select().from(vouchers);
   }
 
-  async updateVoucher(id: number, voucher: Partial<Voucher>): Promise<Voucher | undefined> {
+  async updateVoucher(id: number, voucher: Partial<Voucher> & { items?: InsertVoucherItem[] }): Promise<Voucher | undefined> {
     await this.db.update(vouchers).set(voucher).where(eq(vouchers.id, id));
+    if (voucher.items) {
+      await this.db.delete(voucherItems).where(eq(voucherItems.voucherId, id));
+      for (const item of voucher.items) {
+        await this.db.insert(voucherItems).values({ ...item, voucherId: id });
+      }
+    }
     return await this.getVoucher(id);
   }
 

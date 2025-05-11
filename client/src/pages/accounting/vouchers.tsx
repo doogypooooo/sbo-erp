@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { usePermission } from "@/hooks/use-auth";
+import { usePermission, useAuth } from "@/hooks/use-auth";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
@@ -47,13 +47,20 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { Loader2, Plus, File, Search, Download, MoreHorizontal } from "lucide-react";
+import { Loader2, Plus, File, Search, Download, MoreHorizontal, Minus, Trash, Pencil, Eye } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 
 export default function VouchersPage() {
   // 권한 확인
   const canWrite = usePermission("vouchers", "write");
   const canDelete = usePermission("vouchers", "delete");
   const canExport = usePermission("vouchers", "export");
+  const { user } = useAuth();
   
   // 상태 관리
   const [activeTab, setActiveTab] = useState("vouchers");
@@ -72,12 +79,12 @@ export default function VouchersPage() {
   
   // 전표 데이터 조회
   const { data: vouchers, isLoading } = useQuery({
-    queryKey: ["/api/vouchers", dateRange, selectedType, selectedStatus],
+    queryKey: ["/api/accounting/vouchers", dateRange, selectedType, selectedStatus],
     queryFn: async () => {
       const from = dateRange?.from?.toISOString() || "";
       const to = dateRange?.to?.toISOString() || "";
       
-      let url = `/api/vouchers?`;
+      let url = `/api/accounting/vouchers?`;
       if (dateRange?.from) url += `&from=${from}`;
       if (dateRange?.to) url += `&to=${to}`;
       if (selectedType) url += `&type=${selectedType}`;
@@ -95,9 +102,9 @@ export default function VouchersPage() {
   
   // 계정 데이터 조회
   const { data: accounts } = useQuery({
-    queryKey: ["/api/accounts"],
+    queryKey: ["/api/accounting/accounts"],
     queryFn: async () => {
-      const response = await fetch("/api/accounts");
+      const response = await fetch("/api/accounting/accounts");
       
       if (!response.ok) {
         throw new Error("계정 데이터를 불러오는데 실패했습니다.");
@@ -186,6 +193,170 @@ export default function VouchersPage() {
     setCurrentPage(1);
   };
 
+  // 전표 등록 모달 내부
+  const [accountRows, setAccountRows] = useState<any[]>([]);
+  const [voucherDate, setVoucherDate] = useState("");
+  const [voucherType, setVoucherType] = useState("");
+  const [voucherAmount, setVoucherAmount] = useState(0);
+  const [voucherDescription, setVoucherDescription] = useState("");
+  const [isVoucherDialogOpen, setIsVoucherDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  function handleAddAccountRow() {
+    setAccountRows([...accountRows, { accountId: "", debit: 0, credit: 0, description: "" }]);
+  }
+
+  async function handleVoucherSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!voucherDate || !voucherType || !voucherAmount || accountRows.length === 0) {
+      alert("필수 정보를 입력하세요.");
+      return;
+    }
+    // 차변/대변 합계 계산
+    const debitTotal = accountRows.reduce((sum, row) => sum + Number(row.debit), 0);
+    const creditTotal = accountRows.reduce((sum, row) => sum + Number(row.credit), 0);
+    if (debitTotal !== creditTotal) {
+      alert("차변과 대변의 합계가 일치해야 합니다.");
+      return;
+    }
+    if (debitTotal !== Number(voucherAmount)) {
+      alert("전표 금액과 차변 합계가 일치해야 합니다.");
+      return;
+    }
+    // 계정행 -> 전표 항목 변환 (차변은 양수, 대변은 음수)
+    const items = accountRows.map(row => ({
+      accountId: Number(row.accountId),
+      amount: Number(row.debit) > 0 ? Number(row.debit) : -Number(row.credit),
+      description: row.description || ""
+    }));
+    setSaving(true);
+    const payload = {
+      voucher: {
+        date: voucherDate,
+        type: voucherType,
+        amount: Number(voucherAmount),
+        description: voucherDescription,
+        createdBy: user?.id
+      },
+      items
+    };
+    const res = await fetch("/api/accounting/vouchers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    setSaving(false);
+    if (res.ok) {
+      setIsVoucherDialogOpen(false);
+      setAccountRows([]);
+      setVoucherDate("");
+      setVoucherType("");
+      setVoucherAmount(0);
+      setVoucherDescription("");
+      window.location.reload();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.message || "저장 실패");
+    }
+  }
+
+  // 1. 상태 추가
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [selectedVoucher, setSelectedVoucher] = useState<any>(null);
+  const [editRows, setEditRows] = useState<any[]>([]);
+  const [editDate, setEditDate] = useState("");
+  const [editType, setEditType] = useState("");
+  const [editAmount, setEditAmount] = useState(0);
+  const [editDescription, setEditDescription] = useState("");
+  const [editStatus, setEditStatus] = useState("");
+
+  // 2. 수정 버튼 클릭 핸들러
+  function handleEditClick(voucher: any) {
+    setSelectedVoucher(voucher);
+    setEditRows(
+      voucher.items
+        ? voucher.items.map((item: any) => ({
+            ...item,
+            debit: item.amount > 0 ? item.amount : "",
+            credit: item.amount < 0 ? -item.amount : "",
+          }))
+        : []
+    );
+    setEditDate(voucher.date?.slice(0, 10) || "");
+    setEditType(voucher.type || "");
+    setEditAmount(voucher.amount || 0);
+    setEditDescription(voucher.items?.[0]?.description || "");
+    setEditStatus(voucher.status || "pending");
+    setIsEditDialogOpen(true);
+  }
+
+  // 3. 수정 저장 핸들러
+  async function handleEditVoucherSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedVoucher) return;
+    // 차변/대변 합계 계산
+    const debitTotal = editRows.reduce((sum, row) => sum + (Number(row.debit) || 0), 0);
+    const creditTotal = editRows.reduce((sum, row) => sum + (Number(row.credit) || 0), 0);
+    if (debitTotal !== creditTotal) {
+      alert("차변과 대변의 합계가 일치해야 합니다.");
+      return;
+    }
+    if (debitTotal !== Number(editAmount)) {
+      alert("전표 금액과 차변 합계가 일치해야 합니다.");
+      return;
+    }
+    // 계정행 -> 전표 항목 변환 (차변은 양수, 대변은 음수)
+    const items = editRows.map(row => ({
+      id: row.id,
+      accountId: Number(row.accountId),
+      amount: Number(row.amount),
+      description: row.description || ""
+    }));
+    const payload = {
+      date: editDate,
+      type: editType,
+      amount: Number(editAmount),
+      status: editStatus,
+      items,
+    };
+    const res = await fetch(`/api/accounting/vouchers/${selectedVoucher.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      setIsEditDialogOpen(false);
+      setSelectedVoucher(null);
+      setEditRows([]);
+      window.location.reload();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.message || "수정 실패");
+    }
+  }
+
+  // 상세 다이얼로그 상태 추가
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [detailVoucher, setDetailVoucher] = useState<any>(null);
+
+  // 상세보기 핸들러
+  function handleViewDetail(voucher: any) {
+    setDetailVoucher(voucher);
+    setIsDetailDialogOpen(true);
+  }
+
+  // 삭제 핸들러
+  async function handleDeleteVoucher(voucher: any) {
+    if (!window.confirm("정말 삭제하시겠습니까?")) return;
+    const res = await fetch(`/api/accounting/vouchers/${voucher.id}`, { method: "DELETE" });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.message || "삭제 실패");
+    }
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -216,7 +387,13 @@ export default function VouchersPage() {
               
               {/* 전표 등록 버튼 */}
               {canWrite && (
-                <Dialog>
+                <Dialog
+                  open={isVoucherDialogOpen}
+                  onOpenChange={open => {
+                    setIsVoucherDialogOpen(open);
+                    if (!open) setAccountRows([]);
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button>
                       <Plus className="h-4 w-4 mr-2" />
@@ -230,68 +407,126 @@ export default function VouchersPage() {
                         새로운 전표 정보를 입력하세요.
                       </DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-6 py-4">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div className="space-y-2">
-                          <Label htmlFor="date">거래일자</Label>
-                          <Input id="date" type="date" />
+                    <form onSubmit={handleVoucherSubmit}>
+                      <div className="grid gap-6 py-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="date">거래일자</Label>
+                            <Input id="date" type="date" value={voucherDate} onChange={e => setVoucherDate(e.target.value)} required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="type">전표유형</Label>
+                            <Select value={voucherType} onValueChange={setVoucherType} required>
+                              <SelectTrigger id="type">
+                                <SelectValue placeholder="유형 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="income">수입</SelectItem>
+                                <SelectItem value="expense">지출</SelectItem>
+                                <SelectItem value="transfer">대체</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="amount">금액</Label>
+                            <Input id="amount" type="number" placeholder="0" value={voucherAmount} onChange={e => setVoucherAmount(Number(e.target.value))} required />
+                          </div>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="type">전표유형</Label>
-                          <Select>
-                            <SelectTrigger id="type">
-                              <SelectValue placeholder="유형 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="income">수입</SelectItem>
-                              <SelectItem value="expense">지출</SelectItem>
-                              <SelectItem value="transfer">대체</SelectItem>
-                            </SelectContent>
-                          </Select>
+                          <Label>계정 정보</Label>
+                          <div className="border rounded-md">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>계정과목</TableHead>
+                                  <TableHead>차변</TableHead>
+                                  <TableHead>대변</TableHead>
+                                  <TableHead>적요</TableHead>
+                                  <TableHead>관리</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {accountRows.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="text-center py-4">
+                                      계정 정보를 추가하세요
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  accountRows.map((row, idx) => (
+                                    <TableRow key={idx}>
+                                      <TableCell>
+                                        <Select
+                                          value={row.accountId}
+                                          onValueChange={val => {
+                                            const newRows = [...accountRows];
+                                            newRows[idx].accountId = val;
+                                            setAccountRows(newRows);
+                                          }}
+                                        >
+                                          <SelectTrigger><SelectValue placeholder="계정 선택" /></SelectTrigger>
+                                          <SelectContent>
+                                            {(accounts ?? []).map((acc: any) => (
+                                              <SelectItem key={acc.id} value={String(acc.id)}>{acc.name}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Input type="number" value={row.debit} onChange={e => {
+                                          const newRows = [...accountRows];
+                                          newRows[idx].debit = Number(e.target.value);
+                                          setAccountRows(newRows);
+                                        }} />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Input type="number" value={row.credit} onChange={e => {
+                                          const newRows = [...accountRows];
+                                          newRows[idx].credit = Number(e.target.value);
+                                          setAccountRows(newRows);
+                                        }} />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Input value={row.description} onChange={e => {
+                                          const newRows = [...accountRows];
+                                          newRows[idx].description = e.target.value;
+                                          setAccountRows(newRows);
+                                        }} />
+                                      </TableCell>
+                                      <TableCell>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => {
+                                            setAccountRows(accountRows.filter((_, i) => i !== idx));
+                                          }}
+                                          disabled={accountRows.length === 1}
+                                          aria-label="계정행 삭제"
+                                        >
+                                          <Trash className="h-4 w-4" />
+                                        </Button>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                          <Button variant="outline" size="sm" className="mt-2" onClick={handleAddAccountRow} type="button">
+                            <Plus className="h-4 w-4 mr-2" />
+                            계정 추가
+                          </Button>
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="amount">금액</Label>
-                          <Input id="amount" type="number" placeholder="0" />
+                          <Label htmlFor="description">적요</Label>
+                          <Textarea id="description" placeholder="적요를 입력하세요" value={voucherDescription} onChange={e => setVoucherDescription(e.target.value)} />
                         </div>
                       </div>
-                      
-                      <div className="space-y-2">
-                        <Label>계정 정보</Label>
-                        <div className="border rounded-md">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>계정과목</TableHead>
-                                <TableHead>차변</TableHead>
-                                <TableHead>대변</TableHead>
-                                <TableHead>적요</TableHead>
-                                <TableHead>관리</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              <TableRow>
-                                <TableCell colSpan={5} className="text-center py-4">
-                                  계정 정보를 추가하세요
-                                </TableCell>
-                              </TableRow>
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <Button variant="outline" size="sm" className="mt-2">
-                          <Plus className="h-4 w-4 mr-2" />
-                          계정 추가
-                        </Button>
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <Label htmlFor="description">적요</Label>
-                        <Textarea id="description" placeholder="적요를 입력하세요" />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline">취소</Button>
-                      <Button type="submit">저장</Button>
-                    </DialogFooter>
+                      <DialogFooter>
+                        <Button variant="outline" type="button" onClick={() => setIsVoucherDialogOpen(false)}>취소</Button>
+                        <Button type="submit" disabled={saving}>{saving ? "저장 중..." : "저장"}</Button>
+                      </DialogFooter>
+                    </form>
                   </DialogContent>
                 </Dialog>
               )}
@@ -392,10 +627,20 @@ export default function VouchersPage() {
                           <TableCell>{voucher.code}</TableCell>
                           <TableCell>{new Date(voucher.date).toLocaleDateString()}</TableCell>
                           <TableCell>{getTypeText(voucher.type)}</TableCell>
-                          <TableCell>{voucher.mainAccount}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{voucher.description}</TableCell>
+                          <TableCell>
+                            {voucher.items?.map((item: any) => (
+                              <div key={item.id}>{item.accountName} ({item.amount.toLocaleString()}원)</div>
+                            ))}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate">
+                            {voucher.items?.map((item: any) => (
+                              <div key={item.id}>{item.description}</div>
+                            ))}
+                          </TableCell>
                           <TableCell className="font-mono">
-                            {new Intl.NumberFormat('ko-KR').format(voucher.amount)}원
+                            {voucher.items?.map((item: any) => (
+                              <div key={item.id}>{new Intl.NumberFormat('ko-KR').format(item.amount)}원</div>
+                            ))}
                           </TableCell>
                           <TableCell>
                             <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(voucher.status)}`}>
@@ -403,14 +648,26 @@ export default function VouchersPage() {
                             </span>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <Button variant="ghost" size="icon">
-                                <File className="h-4 w-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon">
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => handleViewDetail(voucher)}>
+                                  <Eye className="h-4 w-4 mr-2" /> 상세보기
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleEditClick(voucher)}>
+                                  <Pencil className="h-4 w-4 mr-2" /> 수정
+                                </DropdownMenuItem>
+                                {voucher.status !== "approved" && (
+                                  <DropdownMenuItem onClick={() => handleDeleteVoucher(voucher)} className="text-destructive">
+                                    <Trash className="h-4 w-4 mr-2" /> 삭제
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       ))
@@ -507,6 +764,210 @@ export default function VouchersPage() {
         
         <Footer />
       </div>
+
+      {/* 수정 다이얼로그 추가 (렌더링 하단에) */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>전표 수정</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleEditVoucherSubmit}>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="edit-date">거래일자</Label>
+                  <Input id="edit-date" type="date" value={editDate} onChange={e => setEditDate(e.target.value)} required />
+                </div>
+                <div>
+                  <Label htmlFor="edit-type">유형</Label>
+                  <Select value={editType} onValueChange={setEditType} required>
+                    <SelectTrigger id="edit-type">
+                      <SelectValue placeholder="유형 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">수입</SelectItem>
+                      <SelectItem value="expense">지출</SelectItem>
+                      <SelectItem value="transfer">대체</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="edit-status">상태</Label>
+                  <Select value={editStatus} onValueChange={setEditStatus} required>
+                    <SelectTrigger id="edit-status">
+                      <SelectValue placeholder="상태 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">대기</SelectItem>
+                      <SelectItem value="approved">확정</SelectItem>
+                      <SelectItem value="canceled">취소</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-amount">금액</Label>
+                  <Input id="edit-amount" type="number" value={editAmount} onChange={e => setEditAmount(Number(e.target.value))} required />
+                </div>
+                <div>
+                  <Label htmlFor="edit-description">적요</Label>
+                  <Input id="edit-description" value={editDescription} onChange={e => setEditDescription(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>계정 정보</Label>
+                <div className="border rounded-md">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>계정과목ID</TableHead>
+                        <TableHead>차변</TableHead>
+                        <TableHead>대변</TableHead>
+                        <TableHead>적요</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-4">
+                            계정 정보를 추가하세요
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        editRows.map((row, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>
+                              <Select
+                                value={String(row.accountId)}
+                                onValueChange={val => {
+                                  const newRows = [...editRows];
+                                  newRows[idx].accountId = val;
+                                  setEditRows(newRows);
+                                }}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="계정 선택" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(accounts ?? []).map((acc: any) => (
+                                    <SelectItem key={acc.id} value={String(acc.id)}>{acc.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                value={row.debit}
+                                onChange={e => {
+                                  const newRows = [...editRows];
+                                  newRows[idx].debit = e.target.value;
+                                  newRows[idx].credit = "";
+                                  newRows[idx].amount = Number(e.target.value) || 0;
+                                  setEditRows(newRows);
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                value={row.credit}
+                                onChange={e => {
+                                  const newRows = [...editRows];
+                                  newRows[idx].credit = e.target.value;
+                                  newRows[idx].debit = "";
+                                  newRows[idx].amount = -Number(e.target.value) || 0;
+                                  setEditRows(newRows);
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                value={row.description || ""}
+                                onChange={e => {
+                                  const newRows = [...editRows];
+                                  newRows[idx].description = e.target.value;
+                                  setEditRows(newRows);
+                                }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" type="button" onClick={() => setIsEditDialogOpen(false)}>취소</Button>
+              <Button type="submit">저장</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* 상세 다이얼로그 추가 */}
+      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>전표 상세</DialogTitle>
+          </DialogHeader>
+          {detailVoucher && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>전표번호</Label>
+                  <div>{detailVoucher.code}</div>
+                </div>
+                <div>
+                  <Label>거래일자</Label>
+                  <div>{new Date(detailVoucher.date).toLocaleDateString()}</div>
+                </div>
+                <div>
+                  <Label>유형</Label>
+                  <div>{getTypeText(detailVoucher.type)}</div>
+                </div>
+                <div>
+                  <Label>상태</Label>
+                  <div>{getStatusText(detailVoucher.status)}</div>
+                </div>
+                <div className="col-span-2">
+                  <Label>적요</Label>
+                  <div>{detailVoucher.items?.map((item: any) => item.description).join(", ")}</div>
+                </div>
+              </div>
+              <div>
+                <Label>계정 정보</Label>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>계정과목</TableHead>
+                      <TableHead>차변</TableHead>
+                      <TableHead>대변</TableHead>
+                      <TableHead>적요</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detailVoucher.items?.map((item: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell>{item.accountName}</TableCell>
+                        <TableCell>{item.amount > 0 ? item.amount.toLocaleString() : ""}</TableCell>
+                        <TableCell>{item.amount < 0 ? (-item.amount).toLocaleString() : ""}</TableCell>
+                        <TableCell>{item.description}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setIsDetailDialogOpen(false)}>닫기</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

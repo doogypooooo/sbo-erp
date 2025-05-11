@@ -116,7 +116,7 @@ export default function PaymentsPage() {
   // 검색된 수금/지급 내역
   const filteredPayments = payments.filter(payment => 
     payment.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    payment.partner?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    getPartnerName(payment.partnerId).toLowerCase().includes(searchTerm.toLowerCase()) ||
     payment.method.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
@@ -339,13 +339,13 @@ export default function PaymentsPage() {
                   <div className="space-y-2">
                     <Label htmlFor="transaction">관련 거래</Label>
                     <Select 
-                      onValueChange={(value) => handleSelectTransaction(value ? parseInt(value) : null)}
+                      onValueChange={(value) => handleSelectTransaction(value === "none" ? null : parseInt(value))}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="관련 거래 선택 (선택사항)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">거래 없음</SelectItem>
+                        <SelectItem value="none">거래 없음</SelectItem>
                         {unpaidTransactions.map(transaction => (
                           <SelectItem key={transaction.id} value={transaction.id.toString()}>
                             {transaction.code} - {transaction.type === 'sale' ? '판매' : '구매'} ({transaction.totalAmount.toLocaleString()}원)

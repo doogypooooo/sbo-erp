@@ -40,7 +40,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Loader2, Plus, Search, Download, Pencil, MoreHorizontal } from "lucide-react";
+import { Loader2, Plus, Search, Download, Pencil, MoreHorizontal, Eye } from "lucide-react";
+import * as XLSX from "xlsx";
+import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 export default function AccountsPage() {
   // 권한 확인
@@ -56,36 +59,40 @@ export default function AccountsPage() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<any | null>(null);
+  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
+  const [detailAccount, setDetailAccount] = useState<any | null>(null);
   const pageSize = 10;
   
   const { toast } = useToast();
   
   // 계정과목 데이터 조회
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ["/api/accounts"],
+    queryKey: ["/api/accounting/accounts"],
     queryFn: async () => {
-      const response = await fetch("/api/accounts");
+      const response = await fetch("/api/accounting/accounts", { credentials: "include" });
       
       if (!response.ok) {
         throw new Error("계정과목 데이터를 불러오는데 실패했습니다.");
       }
       
       return response.json();
-    }
+    },
+    staleTime: 0,
   });
   
   // 새 계정과목 추가 뮤테이션
   const addAccountMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("POST", "/api/accounts", data);
+      return await apiRequest("POST", "/api/accounting/accounts", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/accounts"] });
       setIsAddDialogOpen(false);
       toast({
         title: "계정과목 추가 완료",
         description: "새로운 계정과목이 추가되었습니다.",
       });
+      window.location.reload();
     },
     onError: (error: Error) => {
       toast({
@@ -99,16 +106,18 @@ export default function AccountsPage() {
   // 계정과목 수정 뮤테이션
   const editAccountMutation = useMutation({
     mutationFn: async (data: any) => {
-      return await apiRequest("PATCH", `/api/accounts/${data.id}`, data);
+      return await apiRequest("PUT", `/api/accounting/accounts/${data.id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounting/accounts"] });
+      queryClient.refetchQueries({ queryKey: ["/api/accounting/accounts"] });
       setIsEditDialogOpen(false);
       setSelectedAccount(null);
       toast({
         title: "계정과목 수정 완료",
         description: "계정과목이 수정되었습니다.",
       });
+      window.location.reload();
     },
     onError: (error: Error) => {
       toast({
@@ -210,6 +219,26 @@ export default function AccountsPage() {
     setSelectedAccount(account);
     setIsEditDialogOpen(true);
   };
+
+  // 엑셀 다운로드 함수
+  function handleExcelDownload() {
+    if (!accounts || accounts.length === 0) return;
+    const data = accounts.map((account: any) => ({
+      계정코드: account.code,
+      계정명: account.name,
+      계정유형: getAccountTypeText(account.type),
+      상태: account.isActive ? "활성" : "비활성",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Accounts");
+    XLSX.writeFile(wb, "accounts.xlsx");
+  }
+
+  function handleViewDetail(account: any) {
+    setDetailAccount(account);
+    setIsDetailDialogOpen(true);
+  }
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -343,10 +372,16 @@ export default function AccountsPage() {
             
             {/* 엑셀 다운로드 버튼 */}
             {canExport && (
-              <Button variant="outline">
-                <Download className="h-4 w-4 mr-2" />
-                엑셀 다운로드
-              </Button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" size="icon" onClick={handleExcelDownload}>
+                      <Download className="h-5 w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>엑셀 다운로드</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           
@@ -384,25 +419,28 @@ export default function AccountsPage() {
                       <TableCell className="font-medium">{account.name}</TableCell>
                       <TableCell>{getAccountTypeText(account.type)}</TableCell>
                       <TableCell>
-                        <span className={`px-2 py-1 rounded-full text-xs ${account.isActive ? 'bg-primary bg-opacity-10 text-primary' : 'bg-neutral-300 bg-opacity-10 text-neutral-300'}`}>
+                        <span className={`px-2 py-1 rounded-full text-xs ${account.isActive ? 'bg-primary bg-opacity-10 text-white' : 'bg-neutral-300 bg-opacity-10 text-neutral-300'}`}>
                           {account.isActive ? "활성" : "비활성"}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          {canWrite && (
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handleOpenEditDialog(account)}
-                            >
-                              <Pencil className="h-4 w-4" />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreHorizontal className="h-4 w-4" />
                             </Button>
-                          )}
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleViewDetail(account)}>
+                              <Eye className="h-4 w-4 mr-2" /> 상세보기
+                            </DropdownMenuItem>
+                            {canWrite && (
+                              <DropdownMenuItem onClick={() => handleOpenEditDialog(account)}>
+                                <Pencil className="h-4 w-4 mr-2" /> 수정
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   ))
@@ -519,7 +557,25 @@ export default function AccountsPage() {
             </Dialog>
           )}
         </main>
-        
+        {/* 상세보기 다이얼로그 */}
+        <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>계정과목 상세</DialogTitle>
+            </DialogHeader>
+            {detailAccount && (
+              <div className="space-y-2">
+                <div>계정코드: {detailAccount.code}</div>
+                <div>계정명: {detailAccount.name}</div>
+                <div>계정유형: {getAccountTypeText(detailAccount.type)}</div>
+                <div>상태: {detailAccount.isActive ? "활성" : "비활성"}</div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setIsDetailDialogOpen(false)}>닫기</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <Footer />
       </div>
     </div>

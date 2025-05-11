@@ -150,10 +150,22 @@ accountingRouter.get("/vouchers", checkPermission('vouchers', 'read'), async (re
         if (voucher.partnerId) {
           partner = await storage.getPartner(voucher.partnerId);
         }
-        
+        // 각 전표의 항목 조회
+        const items = await storage.getVoucherItems(voucher.id);
+        // 각 항목에 계정명 추가
+        const itemsWithAccount = await Promise.all(
+          items.map(async (item) => {
+            const account = await storage.getAccount(item.accountId);
+            return {
+              ...item,
+              accountName: account?.name || null
+            };
+          })
+        );
         return {
           ...voucher,
-          partnerName: partner?.name || null
+          partnerName: partner?.name || null,
+          items: itemsWithAccount
         };
       })
     );
@@ -209,19 +221,6 @@ accountingRouter.post("/vouchers", checkPermission('vouchers', 'write'), async (
   try {
     const { voucher: voucherData, items: voucherItemsData } = req.body;
     
-    // 전표 Zod 검증
-    const voucherValidation = insertVoucherSchema.safeParse({
-      ...voucherData,
-      createdBy: req.user.id
-    });
-    
-    if (!voucherValidation.success) {
-      return res.status(400).json({ 
-        message: "전표 데이터가 유효하지 않습니다.", 
-        errors: voucherValidation.error.errors 
-      });
-    }
-    
     // 전표 항목 검증
     if (!Array.isArray(voucherItemsData) || voucherItemsData.length === 0) {
       return res.status(400).json({ message: "전표 항목이 필요합니다." });
@@ -236,26 +235,35 @@ accountingRouter.post("/vouchers", checkPermission('vouchers', 'write'), async (
     }
     
     // 계정과목 존재 확인 및 합계 검증
-    let totalAmount = 0;
+    let debitTotal = 0;
+    let creditTotal = 0;
     for (const item of voucherItemsData) {
       const account = await storage.getAccount(item.accountId);
       if (!account) {
         return res.status(400).json({ message: `존재하지 않는 계정과목입니다: ${item.accountId}` });
       }
-      
-      if (typeof item.amount !== 'number' || item.amount <= 0) {
-        return res.status(400).json({ message: "금액은 0보다 커야 합니다." });
+      if (typeof item.amount !== 'number' || item.amount === 0) {
+        return res.status(400).json({ message: "금액은 0이 아니어야 합니다." });
       }
-      
-      totalAmount += item.amount;
+      if (item.amount > 0) {
+        debitTotal += item.amount;
+      } else {
+        creditTotal += Math.abs(item.amount);
+      }
     }
-    
-    // 전표 금액과 항목 합계 검증
-    if (totalAmount !== voucherData.amount) {
+    // 차변/대변 합계 체크
+    if (debitTotal !== creditTotal) {
       return res.status(400).json({
-        message: "전표 금액과 항목 합계가 일치하지 않습니다.",
+        message: "차변과 대변의 합계가 일치하지 않습니다.",
+        debitTotal,
+        creditTotal
+      });
+    }
+    if (debitTotal !== voucherData.amount) {
+      return res.status(400).json({
+        message: "전표 금액과 차변 합계가 일치하지 않습니다.",
         voucherAmount: voucherData.amount,
-        itemsTotal: totalAmount
+        debitTotal
       });
     }
     
@@ -272,7 +280,7 @@ accountingRouter.post("/vouchers", checkPermission('vouchers', 'write'), async (
     // 전표 등록
     const voucher = await storage.createVoucher(
       {
-        ...voucherValidation.data,
+        ...voucherData,
         code: voucherCode,
         createdBy: req.user.id
       },
@@ -289,6 +297,29 @@ accountingRouter.post("/vouchers", checkPermission('vouchers', 'write'), async (
       ...voucher,
       items: voucherItems
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 전표 수정
+accountingRouter.put("/vouchers/:id", checkPermission('vouchers', 'write'), async (req, res, next) => {
+  try {
+    const voucherId = parseInt(req.params.id);
+    const voucherData = req.body;
+    // 전표 존재 확인
+    const voucher = await storage.getVoucher(voucherId);
+    if (!voucher) {
+      return res.status(404).json({ message: "전표를 찾을 수 없습니다." });
+    }
+    // 전표 수정
+    const updatedVoucher = await storage.updateVoucher(voucherId, voucherData);
+    if (!updatedVoucher) {
+      return res.status(500).json({ message: "전표 정보 업데이트에 실패했습니다." });
+    }
+    // 항목도 반환
+    const items = await storage.getVoucherItems(voucherId);
+    res.json({ ...updatedVoucher, items });
   } catch (error) {
     next(error);
   }
