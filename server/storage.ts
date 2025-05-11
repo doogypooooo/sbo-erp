@@ -61,6 +61,7 @@ export interface IStorage {
   getTransactionItems(transactionId: number): Promise<TransactionItem[]>;
   getTransactions(type?: string, status?: string): Promise<Transaction[]>;
   updateTransaction(id: number, transaction: Partial<Transaction>): Promise<Transaction | undefined>;
+  deleteTransaction(id: number): Promise<boolean>;
 
   // 회계 관리
   createAccount(account: InsertAccount): Promise<Account>;
@@ -261,15 +262,17 @@ export class SQLiteStorage implements IStorage {
 
   // 거래 관리
   async createTransaction(transaction: InsertTransaction, items: InsertTransactionItem[]): Promise<Transaction> {
-    // 트랜잭션 생성 및 항목 삽입
-    // @ts-ignore
-    const inserted = await this.db.insert(transactions).values(transaction).returning() as any[];
-    const tx = inserted[0];
-    for (const item of items) {
-      // @ts-ignore
-      await this.db.insert(transactionItems).values({ ...item, transactionId: tx.id }).returning();
-    }
-    return tx;
+    return this.db.transaction((tx) => {
+      // 트랜잭션 생성
+      const { lastInsertRowid } = tx.insert(transactions).values(transaction).run();
+      const transactionId = Number(lastInsertRowid);
+      // 트랜잭션 row를 다시 조회
+      const txRow = tx.select().from(transactions).where(eq(transactions.id, transactionId)).get();
+      for (const item of items) {
+        tx.insert(transactionItems).values({ ...item, transactionId }).run();
+      }
+      return txRow;
+    });
   }
 
   async getTransaction(id: number): Promise<Transaction | undefined> {
@@ -295,6 +298,14 @@ export class SQLiteStorage implements IStorage {
   async updateTransaction(id: number, transaction: Partial<Transaction>): Promise<Transaction | undefined> {
     await this.db.update(transactions).set(transaction).where(eq(transactions.id, id));
     return await this.getTransaction(id);
+  }
+
+  async deleteTransaction(id: number): Promise<boolean> {
+    return this.db.transaction((tx) => {
+      tx.delete(transactionItems).where(eq(transactionItems.transactionId, id)).run();
+      const result = tx.delete(transactions).where(eq(transactions.id, id)).run();
+      return result.changes > 0;
+    });
   }
 
   // 회계 관리

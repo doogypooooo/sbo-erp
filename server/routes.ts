@@ -9,6 +9,7 @@ import { itemsRouter } from "./api/items";
 import { inventoryRouter } from "./api/inventory";
 import { accountingRouter } from "./api/accounting";
 import { barcodesRouter } from "./api/barcodes";
+import { transactionsRouter } from "./api/transactions";
 import { UserRoleEnum, PartnerTypeEnum } from "@shared/schema";
 import { log } from "./vite";
 
@@ -172,6 +173,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // 회계/재무 API
   apiRouter.use("/accounting", accountingRouter);
+
+  // 거래(구매/입고) API
+  apiRouter.use("/transactions", transactionsRouter);
 
   // 대시보드 API
   apiRouter.get("/dashboard", (req, res) => {

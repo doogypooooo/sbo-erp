@@ -181,9 +181,19 @@ export default function TransactionTable() {
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{transaction.partnerName}</TableCell>
-                  <TableCell className="whitespace-nowrap">{transaction.items}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {Array.isArray(transaction.items)
+                      ? transaction.items.map((item: any, idx: number) =>
+                          `${item.itemId} (수량:${item.quantity})${idx < transaction.items.length - 1 ? ', ' : ''}`
+                        )
+                      : (transaction.items ?? '')}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap font-mono">{transaction.quantity}</TableCell>
-                  <TableCell className="whitespace-nowrap font-mono">{transaction.amount.toLocaleString()}원</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono">
+                    {typeof transaction.amount === "number"
+                      ? transaction.amount.toLocaleString() + "원"
+                      : "-"}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">{transaction.date}</TableCell>
                   <TableCell>
                     <span className={`px-2 py-1 text-xs rounded-full ${getStatusClass(transaction.status)}`}>
