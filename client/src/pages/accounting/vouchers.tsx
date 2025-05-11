@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePermission, useAuth } from "@/hooks/use-auth";
 import Sidebar from "@/components/layout/sidebar";
@@ -47,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
-import { Loader2, Plus, File, Search, Download, MoreHorizontal, Minus, Trash, Pencil, Eye } from "lucide-react";
+import { Loader2, Plus, File, Search, Download, MoreHorizontal, Minus, Trash, Pencil, Eye, Trash2, Upload, ChevronDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -55,6 +55,16 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import * as XLSX from "xlsx";
+
+// 템플릿 타입 정의
+type TemplateType = {
+  id: string;
+  title: string;
+  type: string;
+  amount: number;
+  items: { accountId: string; debit: number; credit: number; description: string }[];
+  description: string;
+};
 
 export default function VouchersPage() {
   // 권한 확인
@@ -378,6 +388,79 @@ export default function VouchersPage() {
     XLSX.writeFile(wb, "vouchers.xlsx");
   }
 
+  // 템플릿 상태 및 로컬스토리지 연동
+  const [templates, setTemplates] = useState<TemplateType[]>(() => {
+    const saved = localStorage.getItem('voucherTemplates');
+    return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => {
+    localStorage.setItem('voucherTemplates', JSON.stringify(templates));
+  }, [templates]);
+
+  // 템플릿 추가/삭제/적용
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [templateForm, setTemplateForm] = useState<Omit<TemplateType, 'id'>>({
+    title: '',
+    type: '',
+    amount: 0,
+    items: [],
+    description: ''
+  });
+  function handleAddTemplate() {
+    setTemplates(prev => [...prev, { ...templateForm, id: crypto.randomUUID() }]);
+    setIsTemplateDialogOpen(false);
+    setTemplateForm({ title: '', type: '', amount: 0, items: [], description: '' });
+  }
+  function handleDeleteTemplate(id: string) {
+    setTemplates(prev => prev.filter(t => t.id !== id));
+  }
+  function handleApplyTemplate(template: TemplateType) {
+    setVoucherDate(new Date().toISOString().slice(0, 10));
+    setVoucherType(template.type);
+    setVoucherAmount(template.amount);
+    setVoucherStatus('pending');
+    setAccountRows(template.items);
+    setVoucherDescription(template.description);
+    setIsVoucherDialogOpen(true);
+  }
+
+  // 템플릿 Export/Import
+  function handleExportTemplates() {
+    const dataStr = JSON.stringify(templates, null, 2);
+    const blob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "voucher-templates.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  function handleImportTemplates(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const imported = JSON.parse(event.target?.result as string);
+        if (Array.isArray(imported)) {
+          setTemplates(imported.map(t => ({ ...t, id: t.id || crypto.randomUUID() })));
+        } else {
+          alert("잘못된 템플릿 파일입니다.");
+        }
+      } catch {
+        alert("템플릿 파일을 읽을 수 없습니다.");
+      }
+    };
+    reader.readAsText(file);
+    // 파일 input 초기화
+    e.target.value = '';
+  }
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const [isTemplateSelectOpen, setIsTemplateSelectOpen] = useState(false);
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -430,6 +513,33 @@ export default function VouchersPage() {
                     </DialogHeader>
                     <form onSubmit={handleVoucherSubmit}>
                       <div className="grid gap-6 py-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Button type="button" variant="outline" size="sm" onClick={() => setIsTemplateSelectOpen(v => !v)}>
+                            <File className="h-4 w-4 mr-1" /> 템플릿에서 불러오기 <ChevronDown className="h-4 w-4 ml-1" />
+                          </Button>
+                          {isTemplateSelectOpen && templates.length > 0 && (
+                            <div className="absolute z-50 mt-2 bg-white border rounded shadow p-2 w-64">
+                              <div className="font-semibold mb-1 text-sm">템플릿 선택</div>
+                              <ul>
+                                {templates.map(tpl => (
+                                  <li key={tpl.id}>
+                                    <Button type="button" variant="ghost" className="w-full justify-start text-left px-2 py-1 text-sm" onClick={() => {
+                                      setVoucherDate(new Date().toISOString().slice(0, 10));
+                                      setVoucherType(tpl.type);
+                                      setVoucherAmount(tpl.amount);
+                                      setVoucherStatus('pending');
+                                      setAccountRows(tpl.items);
+                                      setVoucherDescription(tpl.description);
+                                      setIsTemplateSelectOpen(false);
+                                    }}>
+                                      {tpl.title}
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="date">거래일자</Label>
@@ -752,44 +862,168 @@ export default function VouchersPage() {
             
             <TabsContent value="templates">
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-medium mb-4">전표 템플릿</h3>
-                <p className="text-muted-foreground mb-4">자주 사용하는 전표를 템플릿으로 저장하여 효율적으로 관리하세요.</p>
-                
-                {/* 템플릿 목록 (예시) */}
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-medium">전표 템플릿</h3>
+                    <p className="text-muted-foreground text-sm">자주 사용하는 전표를 템플릿으로 저장하여 효율적으로 관리하세요.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="icon" onClick={handleExportTemplates} title="템플릿 내보내기">
+                      <Download className="h-5 w-5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" onClick={() => importInputRef.current?.click()} title="템플릿 가져오기">
+                      <Upload className="h-5 w-5" />
+                    </Button>
+                    <input type="file" accept="application/json" ref={importInputRef} style={{ display: 'none' }} onChange={handleImportTemplates} />
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Card className="hover:bg-gray-50 cursor-pointer transition-colors">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base">월세 지급</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-sm text-muted-foreground">
-                        <p>지출 전표</p>
-                        <p>계정: 임차료, 현금</p>
-                        <p>금액: 500,000원</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  
-                  <Card className="hover:bg-gray-50 cursor-pointer transition-colors">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base">급여 지급</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-sm text-muted-foreground">
-                        <p>지출 전표</p>
-                        <p>계정: 급여, 현금</p>
-                        <p>금액: 2,000,000원</p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  
+                  {templates.map((tpl) => (
+                    <Card key={tpl.id} className="hover:bg-gray-50 cursor-pointer transition-colors relative group" onClick={() => handleApplyTemplate(tpl)}>
+                      <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                        <CardTitle className="text-base">{tpl.title}</CardTitle>
+                        <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => { e.stopPropagation(); handleDeleteTemplate(tpl.id); }} title="삭제">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-sm text-muted-foreground">
+                          <p>{getTypeText(tpl.type)} 전표</p>
+                          <p>계정: {(tpl.items || []).map(i => {
+                            const acc = (accounts || []).find((a: any) => String(a.id) === String(i.accountId));
+                            return acc ? acc.name : i.accountId;
+                          }).join(', ')}</p>
+                          <p>금액: {Number(tpl.amount).toLocaleString()}원</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
                   <Card className="border-dashed flex items-center justify-center h-32 hover:bg-gray-50 cursor-pointer transition-colors">
-                    <Button variant="ghost">
+                    <Button variant="ghost" onClick={() => setIsTemplateDialogOpen(true)}>
                       <Plus className="h-5 w-5 mr-2" />
                       템플릿 추가
                     </Button>
                   </Card>
                 </div>
+                {/* 템플릿 추가 다이얼로그 */}
+                <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>템플릿 추가</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={e => { e.preventDefault(); handleAddTemplate(); }}>
+                      <div className="grid gap-4 py-2">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="tpl-title">제목</Label>
+                            <Input id="tpl-title" value={templateForm.title} onChange={e => setTemplateForm(f => ({ ...f, title: e.target.value }))} required />
+                          </div>
+                          <div>
+                            <Label htmlFor="tpl-type">전표유형</Label>
+                            <Select value={templateForm.type} onValueChange={val => setTemplateForm(f => ({ ...f, type: val }))} required>
+                              <SelectTrigger id="tpl-type">
+                                <SelectValue placeholder="유형 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="income">수입</SelectItem>
+                                <SelectItem value="expense">지출</SelectItem>
+                                <SelectItem value="transfer">대체</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="tpl-amount">금액</Label>
+                            <Input id="tpl-amount" type="number" value={templateForm.amount} onChange={e => setTemplateForm(f => ({ ...f, amount: Number(e.target.value) }))} required />
+                          </div>
+                          <div>
+                            <Label htmlFor="tpl-description">적요</Label>
+                            <Input id="tpl-description" value={templateForm.description} onChange={e => setTemplateForm(f => ({ ...f, description: e.target.value }))} />
+                          </div>
+                        </div>
+                        <div>
+                          <Label>계정 정보</Label>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>계정과목</TableHead>
+                                <TableHead>차변</TableHead>
+                                <TableHead>대변</TableHead>
+                                <TableHead>적요</TableHead>
+                                <TableHead>관리</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {templateForm.items.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-center py-4">계정 정보를 추가하세요</TableCell>
+                                </TableRow>
+                              ) : (
+                                templateForm.items.map((row, idx) => (
+                                  <TableRow key={idx}>
+                                    <TableCell>
+                                      <Select
+                                        value={row.accountId}
+                                        onValueChange={val => {
+                                          const newRows = [...templateForm.items];
+                                          newRows[idx].accountId = val;
+                                          setTemplateForm(f => ({ ...f, items: newRows }));
+                                        }}
+                                      >
+                                        <SelectTrigger><SelectValue placeholder="계정 선택" /></SelectTrigger>
+                                        <SelectContent>
+                                          {(accounts ?? []).map((acc: any) => (
+                                            <SelectItem key={acc.id} value={String(acc.id)}>{acc.name}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input type="number" value={row.debit} onChange={e => {
+                                        const newRows = [...templateForm.items];
+                                        newRows[idx].debit = Number(e.target.value);
+                                        setTemplateForm(f => ({ ...f, items: newRows }));
+                                      }} />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input type="number" value={row.credit} onChange={e => {
+                                        const newRows = [...templateForm.items];
+                                        newRows[idx].credit = Number(e.target.value);
+                                        setTemplateForm(f => ({ ...f, items: newRows }));
+                                      }} />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input value={row.description} onChange={e => {
+                                        const newRows = [...templateForm.items];
+                                        newRows[idx].description = e.target.value;
+                                        setTemplateForm(f => ({ ...f, items: newRows }));
+                                      }} />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Button variant="ghost" size="icon" onClick={() => {
+                                        setTemplateForm(f => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+                                      }} aria-label="계정행 삭제">
+                                        <Trash className="h-4 w-4" />
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))
+                              )}
+                            </TableBody>
+                          </Table>
+                          <Button variant="outline" size="sm" className="mt-2" type="button" onClick={() => setTemplateForm(f => ({ ...f, items: [...f.items, { accountId: '', debit: 0, credit: 0, description: '' }] }))}>
+                            <Plus className="h-4 w-4 mr-2" /> 계정 추가
+                          </Button>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" type="button" onClick={() => setIsTemplateDialogOpen(false)}>취소</Button>
+                        <Button type="submit">저장</Button>
+                      </DialogFooter>
+                    </form>
+                  </DialogContent>
+                </Dialog>
               </div>
             </TabsContent>
           </Tabs>
