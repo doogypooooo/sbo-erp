@@ -54,6 +54,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import * as XLSX from "xlsx";
 
 export default function VouchersPage() {
   // 권한 확인
@@ -166,7 +167,7 @@ export default function VouchersPage() {
   const getStatusClass = (status: string) => {
     switch (status) {
       case "approved":
-        return "bg-primary bg-opacity-10 text-primary";
+        return "bg-primary bg-opacity-10 text-white";
       case "pending":
         return "bg-neutral-300 bg-opacity-10 text-neutral-300";
       case "rejected":
@@ -201,6 +202,7 @@ export default function VouchersPage() {
   const [voucherDescription, setVoucherDescription] = useState("");
   const [isVoucherDialogOpen, setIsVoucherDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [voucherStatus, setVoucherStatus] = useState("pending");
 
   function handleAddAccountRow() {
     setAccountRows([...accountRows, { accountId: "", debit: 0, credit: 0, description: "" }]);
@@ -235,6 +237,7 @@ export default function VouchersPage() {
         date: voucherDate,
         type: voucherType,
         amount: Number(voucherAmount),
+        status: voucherStatus,
         description: voucherDescription,
         createdBy: user?.id
       },
@@ -357,6 +360,24 @@ export default function VouchersPage() {
     }
   }
 
+  // 엑셀 다운로드 함수
+  function handleExcelDownload() {
+    if (!vouchers || vouchers.length === 0) return;
+    const data = vouchers.map((voucher: any) => ({
+      전표번호: voucher.code,
+      거래일자: voucher.date,
+      유형: getTypeText(voucher.type),
+      상태: getStatusText(voucher.status),
+      금액: voucher.amount,
+      계정정보: (voucher.items || []).map((item: any) => `${item.accountName} (${item.amount > 0 ? '' : '-'}${Math.abs(item.amount)})`).join(", "),
+      적요: (voucher.items || []).map((item: any) => item.description).join(", ")
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Vouchers");
+    XLSX.writeFile(wb, "vouchers.xlsx");
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -409,7 +430,7 @@ export default function VouchersPage() {
                     </DialogHeader>
                     <form onSubmit={handleVoucherSubmit}>
                       <div className="grid gap-6 py-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="date">거래일자</Label>
                             <Input id="date" type="date" value={voucherDate} onChange={e => setVoucherDate(e.target.value)} required />
@@ -430,6 +451,19 @@ export default function VouchersPage() {
                           <div className="space-y-2">
                             <Label htmlFor="amount">금액</Label>
                             <Input id="amount" type="number" placeholder="0" value={voucherAmount} onChange={e => setVoucherAmount(Number(e.target.value))} required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="status">상태</Label>
+                            <Select value={voucherStatus} onValueChange={setVoucherStatus} required>
+                              <SelectTrigger id="status">
+                                <SelectValue placeholder="상태 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">대기</SelectItem>
+                                <SelectItem value="approved">확정</SelectItem>
+                                <SelectItem value="canceled">취소</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -582,9 +616,8 @@ export default function VouchersPage() {
                 
                 {/* 엑셀 다운로드 버튼 */}
                 {canExport && (
-                  <Button variant="outline">
-                    <Download className="h-4 w-4 mr-2" />
-                    엑셀 다운로드
+                  <Button variant="ghost" size="icon" onClick={handleExcelDownload} title="엑셀 다운로드">
+                    <Download className="h-5 w-5" />
                   </Button>
                 )}
               </div>
@@ -599,7 +632,7 @@ export default function VouchersPage() {
                       <TableHead>전표번호</TableHead>
                       <TableHead>거래일자</TableHead>
                       <TableHead>유형</TableHead>
-                      <TableHead>계정과목</TableHead>
+                      <TableHead className="w-[150px] min-w-[120px]">계정과목</TableHead>
                       <TableHead>적요</TableHead>
                       <TableHead>금액</TableHead>
                       <TableHead>상태</TableHead>
@@ -810,10 +843,6 @@ export default function VouchersPage() {
                   <Label htmlFor="edit-amount">금액</Label>
                   <Input id="edit-amount" type="number" value={editAmount} onChange={e => setEditAmount(Number(e.target.value))} required />
                 </div>
-                <div>
-                  <Label htmlFor="edit-description">적요</Label>
-                  <Input id="edit-description" value={editDescription} onChange={e => setEditDescription(e.target.value)} />
-                </div>
               </div>
               <div className="space-y-2">
                 <Label>계정 정보</Label>
@@ -821,7 +850,7 @@ export default function VouchersPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>계정과목ID</TableHead>
+                        <TableHead>계정과목</TableHead>
                         <TableHead>차변</TableHead>
                         <TableHead>대변</TableHead>
                         <TableHead>적요</TableHead>
@@ -846,7 +875,7 @@ export default function VouchersPage() {
                                   setEditRows(newRows);
                                 }}
                               >
-                                <SelectTrigger>
+                                <SelectTrigger className="min-w-[120px] w-[150px] max-w-[200px]">
                                   <SelectValue placeholder="계정 선택" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -898,6 +927,10 @@ export default function VouchersPage() {
                     </TableBody>
                   </Table>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">적요</Label>
+                <Textarea id="edit-description" placeholder="적요를 입력하세요" value={editDescription} onChange={e => setEditDescription(e.target.value)} />
               </div>
             </div>
             <DialogFooter>

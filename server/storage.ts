@@ -75,6 +75,7 @@ export interface IStorage {
   getVoucherItems(voucherId: number): Promise<VoucherItem[]>;
   getVouchers(type?: string, status?: string): Promise<Voucher[]>;
   updateVoucher(id: number, voucher: Partial<Voucher> & { items?: InsertVoucherItem[] }): Promise<Voucher | undefined>;
+  deleteVoucher(id: number): Promise<boolean>;
 
   // 수금/지급 관리
   createPayment(payment: InsertPayment): Promise<Payment>;
@@ -499,6 +500,15 @@ export class SQLiteStorage implements IStorage {
       }
     }
     return await this.getVoucher(id);
+  }
+
+  async deleteVoucher(id: number): Promise<boolean> {
+    // 트랜잭션으로 전표 및 전표항목 삭제
+    return this.db.transaction((tx) => {
+      tx.delete(voucherItems).where(eq(voucherItems.voucherId, id)).run();
+      const result = tx.delete(vouchers).where(eq(vouchers.id, id)).run();
+      return result.changes > 0;
+    });
   }
 
   // 수금/지급 관리

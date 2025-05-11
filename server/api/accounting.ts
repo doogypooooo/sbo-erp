@@ -359,6 +359,24 @@ accountingRouter.put("/vouchers/:id/status", checkPermission('vouchers', 'write'
   }
 });
 
+// 전표 삭제
+accountingRouter.delete("/vouchers/:id", checkPermission('vouchers', 'delete'), async (req, res, next) => {
+  try {
+    const voucherId = parseInt(req.params.id);
+    const voucher = await storage.getVoucher(voucherId);
+    if (!voucher) {
+      return res.status(404).json({ message: "전표를 찾을 수 없습니다." });
+    }
+    const ok = await storage.deleteVoucher(voucherId);
+    if (!ok) {
+      return res.status(500).json({ message: "전표 삭제에 실패했습니다." });
+    }
+    res.json({ message: "전표가 삭제되었습니다." });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // 수금/지급 API
 
 // 수금/지급 목록 조회
