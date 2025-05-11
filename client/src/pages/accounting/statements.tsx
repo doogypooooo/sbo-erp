@@ -35,20 +35,15 @@ import { ko } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { useReactToPrint } from 'react-to-print';
 import { useRef } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 
 export default function StatementsPage() {
   const { toast } = useToast();
   const printRef = useRef<HTMLDivElement>(null);
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   
   const [startDate, setStartDate] = useState<Date>(subMonths(new Date(), 6));
   const [endDate, setEndDate] = useState<Date>(new Date());
-  
-  // 인쇄 핸들러
-  const handlePrint = useReactToPrint({
-    content: () => printRef.current,
-    documentTitle: '재무제표',
-    onAfterPrint: () => console.log('인쇄 완료')
-  });
   
   // 손익계산서 데이터 조회
   const { data: incomeStatementData = {}, isLoading: isLoadingIncomeStatement } = useQuery({
@@ -105,6 +100,408 @@ export default function StatementsPage() {
   
   // 데이터 로딩 중 표시
   const isLoading = isLoadingIncomeStatement || isLoadingBalanceSheet || isLoadingCashFlow || isLoadingMonthly;
+
+  // 손익계산서 컴포넌트
+  function IncomeStatement() {
+    return (
+      <div className="mb-8 print-avoid-break-table bg-white rounded shadow p-6">
+        <div className="text-center mb-4">
+          <div className="text-2xl font-bold">손익계산서</div>
+          <p className="text-sm text-gray-500">
+            {format(startDate, 'yyyy년 MM월 dd일')} ~ {format(endDate, 'yyyy년 MM월 dd일')}
+          </p>
+        </div>
+        <Table className="print-avoid-break-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-3/5">계정</TableHead>
+              <TableHead className="text-right">금액</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoadingIncomeStatement ? (
+              <TableRow>
+                <TableCell colSpan={2} className="text-center py-10">
+                  데이터를 불러오는 중...
+                </TableCell>
+              </TableRow>
+            ) : (
+              <>
+                <TableRow>
+                  <TableCell colSpan={2} className="font-bold bg-gray-50">매출</TableCell>
+                </TableRow>
+                {incomeStatementData.revenue && incomeStatementData.revenue.map((item: any, index: number) => (
+                  <TableRow key={`revenue-${index}`}>
+                    <TableCell className="pl-8">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-bold">총 매출</TableCell>
+                  <TableCell className="text-right font-bold">{formatAmount(incomeStatementData.totalRevenue || 0)}원</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={2} className="font-bold bg-gray-50">비용</TableCell>
+                </TableRow>
+                {incomeStatementData.expenses && incomeStatementData.expenses.map((item: any, index: number) => (
+                  <TableRow key={`expense-${index}`}>
+                    <TableCell className="pl-8">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-bold">총 비용</TableCell>
+                  <TableCell className="text-right font-bold">{formatAmount(incomeStatementData.totalExpenses || 0)}원</TableCell>
+                </TableRow>
+              </>
+            )}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell className="font-bold">순이익</TableCell>
+              <TableCell className="text-right font-bold">
+                {formatAmount((incomeStatementData.totalRevenue || 0) - (incomeStatementData.totalExpenses || 0))}원
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </div>
+    );
+  }
+
+  // 재무상태표 컴포넌트
+  function BalanceSheet() {
+    return (
+      <div className="mb-8 print-avoid-break-table bg-white rounded shadow p-6">
+        <div className="text-center mb-4">
+          <div className="text-2xl font-bold">재무상태표</div>
+          <p className="text-sm text-gray-500">
+            {format(endDate, 'yyyy년 MM월 dd일')} 기준
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <h3 className="text-lg font-bold mb-2">자산</h3>
+            <Table className="print-avoid-break-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>항목</TableHead>
+                  <TableHead className="text-right">금액</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoadingBalanceSheet ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center py-10">
+                      데이터를 불러오는 중...
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    <TableRow>
+                      <TableCell colSpan={2} className="font-bold bg-gray-50">유동자산</TableCell>
+                    </TableRow>
+                    {balanceSheetData.currentAssets && balanceSheetData.currentAssets.map((item: any, index: number) => (
+                      <TableRow key={`current-asset-${index}`}>
+                        <TableCell className="pl-8">{item.name}</TableCell>
+                        <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="font-bold">유동자산 소계</TableCell>
+                      <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.currentAssets))}원</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2} className="font-bold bg-gray-50">비유동자산</TableCell>
+                    </TableRow>
+                    {balanceSheetData.nonCurrentAssets && balanceSheetData.nonCurrentAssets.map((item: any, index: number) => (
+                      <TableRow key={`non-current-asset-${index}`}>
+                        <TableCell className="pl-8">{item.name}</TableCell>
+                        <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="font-bold">비유동자산 소계</TableCell>
+                      <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.nonCurrentAssets))}원</TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-bold">자산 총계</TableCell>
+                  <TableCell className="text-right font-bold">
+                    {formatAmount(
+                      calculateTotal(balanceSheetData.currentAssets) + 
+                      calculateTotal(balanceSheetData.nonCurrentAssets)
+                    )}원
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold mb-2">부채 및 자본</h3>
+            <Table className="print-avoid-break-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>항목</TableHead>
+                  <TableHead className="text-right">금액</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoadingBalanceSheet ? (
+                  <TableRow>
+                    <TableCell colSpan={2} className="text-center py-10">
+                      데이터를 불러오는 중...
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    <TableRow>
+                      <TableCell colSpan={2} className="font-bold bg-gray-50">유동부채</TableCell>
+                    </TableRow>
+                    {balanceSheetData.currentLiabilities && balanceSheetData.currentLiabilities.map((item: any, index: number) => (
+                      <TableRow key={`current-liability-${index}`}>
+                        <TableCell className="pl-8">{item.name}</TableCell>
+                        <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="font-bold">유동부채 소계</TableCell>
+                      <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.currentLiabilities))}원</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-bold bg-gray-50" colSpan={2}>비유동부채</TableCell>
+                    </TableRow>
+                    {balanceSheetData.nonCurrentLiabilities && balanceSheetData.nonCurrentLiabilities.map((item: any, index: number) => (
+                      <TableRow key={`non-current-liability-${index}`}>
+                        <TableCell className="pl-8">{item.name}</TableCell>
+                        <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="font-bold">비유동부채 소계</TableCell>
+                      <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.nonCurrentLiabilities))}원</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-bold">부채 총계</TableCell>
+                      <TableCell className="text-right font-bold">
+                        {formatAmount(
+                          calculateTotal(balanceSheetData.currentLiabilities) + 
+                          calculateTotal(balanceSheetData.nonCurrentLiabilities)
+                        )}원
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell className="font-bold bg-gray-50" colSpan={2}>자본</TableCell>
+                    </TableRow>
+                    {balanceSheetData.equity && balanceSheetData.equity.map((item: any, index: number) => (
+                      <TableRow key={`equity-${index}`}>
+                        <TableCell className="pl-8">{item.name}</TableCell>
+                        <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow>
+                      <TableCell className="font-bold">자본 총계</TableCell>
+                      <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.equity))}원</TableCell>
+                    </TableRow>
+                  </>
+                )}
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-bold">부채 및 자본 총계</TableCell>
+                  <TableCell className="text-right font-bold">
+                    {formatAmount(
+                      calculateTotal(balanceSheetData.currentLiabilities) + 
+                      calculateTotal(balanceSheetData.nonCurrentLiabilities) +
+                      calculateTotal(balanceSheetData.equity)
+                    )}원
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 현금흐름표 컴포넌트
+  function CashFlowStatement() {
+    return (
+      <div className="mb-8 print-avoid-break-table bg-white rounded shadow p-6">
+        <div className="text-center mb-4">
+          <div className="text-2xl font-bold">현금흐름표</div>
+          <p className="text-sm text-gray-500">
+            {format(startDate, 'yyyy년 MM월 dd일')} ~ {format(endDate, 'yyyy년 MM월 dd일')}
+          </p>
+        </div>
+        <Table className="print-avoid-break-table">
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-3/5">항목</TableHead>
+              <TableHead className="text-right">금액</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoadingCashFlow ? (
+              <TableRow>
+                <TableCell colSpan={2} className="text-center py-10">
+                  데이터를 불러오는 중...
+                </TableCell>
+              </TableRow>
+            ) : (
+              <>
+                <TableRow>
+                  <TableCell className="font-bold">기초 현금 및 현금성 자산</TableCell>
+                  <TableCell className="text-right">{formatAmount(cashFlowData.beginningCash || 0)}원</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={2} className="font-bold bg-gray-50">영업활동 현금흐름</TableCell>
+                </TableRow>
+                {cashFlowData.operatingActivities && cashFlowData.operatingActivities.map((item: any, index: number) => (
+                  <TableRow key={`operating-${index}`}>
+                    <TableCell className="pl-8">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-bold">영업활동 현금흐름 소계</TableCell>
+                  <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.operatingActivities))}원</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={2} className="font-bold bg-gray-50">투자활동 현금흐름</TableCell>
+                </TableRow>
+                {cashFlowData.investingActivities && cashFlowData.investingActivities.map((item: any, index: number) => (
+                  <TableRow key={`investing-${index}`}>
+                    <TableCell className="pl-8">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-bold">투자활동 현금흐름 소계</TableCell>
+                  <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.investingActivities))}원</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell colSpan={2} className="font-bold bg-gray-50">재무활동 현금흐름</TableCell>
+                </TableRow>
+                {cashFlowData.financingActivities && cashFlowData.financingActivities.map((item: any, index: number) => (
+                  <TableRow key={`financing-${index}`}>
+                    <TableCell className="pl-8">{item.name}</TableCell>
+                    <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell className="font-bold">재무활동 현금흐름 소계</TableCell>
+                  <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.financingActivities))}원</TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-bold">현금흐름 순증감</TableCell>
+                  <TableCell className="text-right font-bold">
+                    {formatAmount(
+                      calculateTotal(cashFlowData.operatingActivities) + 
+                      calculateTotal(cashFlowData.investingActivities) +
+                      calculateTotal(cashFlowData.financingActivities)
+                    )}원
+                  </TableCell>
+                </TableRow>
+              </>
+            )}
+          </TableBody>
+          <TableFooter>
+            <TableRow>
+              <TableCell className="font-bold">기말 현금 및 현금성 자산</TableCell>
+              <TableCell className="text-right font-bold">
+                {formatAmount(
+                  (cashFlowData.beginningCash || 0) + 
+                  calculateTotal(cashFlowData.operatingActivities) + 
+                  calculateTotal(cashFlowData.investingActivities) +
+                  calculateTotal(cashFlowData.financingActivities)
+                )}원
+              </TableCell>
+            </TableRow>
+          </TableFooter>
+        </Table>
+      </div>
+    );
+  }
+
+  // 재무제표 탭/표를 컴포넌트로 분리
+  function FinancialTabs() {
+    return (
+      <Tabs defaultValue="income">
+        <TabsList className="mb-4">
+          <TabsTrigger value="income">손익계산서</TabsTrigger>
+          <TabsTrigger value="balance">재무상태표</TabsTrigger>
+          <TabsTrigger value="cash-flow">현금흐름표</TabsTrigger>
+        </TabsList>
+        <TabsContent value="income">
+          <IncomeStatement />
+        </TabsContent>
+        <TabsContent value="balance">
+          <BalanceSheet />
+        </TabsContent>
+        <TabsContent value="cash-flow">
+          <CashFlowStatement />
+        </TabsContent>
+      </Tabs>
+    );
+  }
+
+  // 상단 요약 카드 + 차트 분리
+  function FinancialSummary() {
+    return (
+      <>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatsCard 
+            title="총 매출" 
+            value={`${formatAmount(incomeStatementData.totalRevenue || 0)}원`} 
+            label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
+          />
+          <StatsCard 
+            title="총 비용" 
+            value={`${formatAmount(incomeStatementData.totalExpenses || 0)}원`} 
+            label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
+          />
+          <StatsCard 
+            title="순이익" 
+            value={`${formatAmount((incomeStatementData.totalRevenue || 0) - (incomeStatementData.totalExpenses || 0))}원`} 
+            label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
+          />
+        </div>
+        <div className="h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={monthlyData}
+              margin={{
+                top: 5,
+                right: 30,
+                left: 20,
+                bottom: 5,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip formatter={(value) => `${formatAmount(value as number)}원`} />
+              <Legend />
+              <Bar dataKey="revenue" name="매출" fill="#4f46e5" />
+              <Bar dataKey="expenses" name="비용" fill="#f43f5e" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </>
+    );
+  }
+
+  // useReactToPrint 훅 사용 (react-to-print 3.x 이상)
+  const handlePrint = useReactToPrint({
+    contentRef: printRef,
+    documentTitle: '재무제표',
+    onAfterPrint: () => setIsPrintDialogOpen(false)
+  });
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -181,7 +578,7 @@ export default function StatementsPage() {
                   </div>
                 </div>
                 <Button 
-                  onClick={handlePrint}
+                  onClick={() => setIsPrintDialogOpen(true)}
                   className="flex items-center gap-2 no-print"
                 >
                   <Printer className="h-4 w-4" />
@@ -190,389 +587,40 @@ export default function StatementsPage() {
               </div>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <StatsCard 
-                title="총 매출" 
-                value={`${formatAmount(incomeStatementData.totalRevenue || 0)}원`} 
-                label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
-              />
-              <StatsCard 
-                title="총 비용" 
-                value={`${formatAmount(incomeStatementData.totalExpenses || 0)}원`} 
-                label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
-              />
-              <StatsCard 
-                title="순이익" 
-                value={`${formatAmount((incomeStatementData.totalRevenue || 0) - (incomeStatementData.totalExpenses || 0))}원`} 
-                label={`${format(startDate, 'yyyy.MM.dd')} ~ ${format(endDate, 'yyyy.MM.dd')}`}
-              />
+            <FinancialSummary />
+            
+            <div className="bg-white p-4 rounded shadow">
+              <FinancialTabs />
             </div>
             
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={monthlyData}
-                  margin={{
-                    top: 5,
-                    right: 30,
-                    left: 20,
-                    bottom: 5,
-                  }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => `${formatAmount(value as number)}원`} />
-                  <Legend />
-                  <Bar dataKey="revenue" name="매출" fill="#4f46e5" />
-                  <Bar dataKey="expenses" name="비용" fill="#f43f5e" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            
-            <div ref={printRef}>
-              <Tabs defaultValue="income">
-                <TabsList className="mb-4">
-                  <TabsTrigger value="income">손익계산서</TabsTrigger>
-                  <TabsTrigger value="balance">재무상태표</TabsTrigger>
-                  <TabsTrigger value="cash-flow">현금흐름표</TabsTrigger>
-                </TabsList>
-                
-                <TabsContent value="income">
-                  <Card>
-                    <CardHeader className="text-center">
-                      <CardTitle>손익계산서</CardTitle>
-                      <p className="text-sm text-gray-500">
-                        {format(startDate, 'yyyy년 MM월 dd일')} ~ {format(endDate, 'yyyy년 MM월 dd일')}
-                      </p>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-3/5">계정</TableHead>
-                            <TableHead className="text-right">금액</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {isLoadingIncomeStatement ? (
-                            <TableRow>
-                              <TableCell colSpan={2} className="text-center py-10">
-                                데이터를 불러오는 중...
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            <>
-                              <TableRow>
-                                <TableCell colSpan={2} className="font-bold bg-gray-50">매출</TableCell>
-                              </TableRow>
-                              {incomeStatementData.revenue && incomeStatementData.revenue.map((item: any, index: number) => (
-                                <TableRow key={`revenue-${index}`}>
-                                  <TableCell className="pl-8">{item.name}</TableCell>
-                                  <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                </TableRow>
-                              ))}
-                              <TableRow>
-                                <TableCell className="font-bold">총 매출</TableCell>
-                                <TableCell className="text-right font-bold">{formatAmount(incomeStatementData.totalRevenue || 0)}원</TableCell>
-                              </TableRow>
-                              
-                              <TableRow>
-                                <TableCell colSpan={2} className="font-bold bg-gray-50">비용</TableCell>
-                              </TableRow>
-                              {incomeStatementData.expenses && incomeStatementData.expenses.map((item: any, index: number) => (
-                                <TableRow key={`expense-${index}`}>
-                                  <TableCell className="pl-8">{item.name}</TableCell>
-                                  <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                </TableRow>
-                              ))}
-                              <TableRow>
-                                <TableCell className="font-bold">총 비용</TableCell>
-                                <TableCell className="text-right font-bold">{formatAmount(incomeStatementData.totalExpenses || 0)}원</TableCell>
-                              </TableRow>
-                            </>
-                          )}
-                        </TableBody>
-                        <TableFooter>
-                          <TableRow>
-                            <TableCell className="font-bold">순이익</TableCell>
-                            <TableCell className="text-right font-bold">
-                              {formatAmount((incomeStatementData.totalRevenue || 0) - (incomeStatementData.totalExpenses || 0))}원
-                            </TableCell>
-                          </TableRow>
-                        </TableFooter>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                
-                <TabsContent value="balance">
-                  <Card>
-                    <CardHeader className="text-center">
-                      <CardTitle>재무상태표</CardTitle>
-                      <p className="text-sm text-gray-500">
-                        {format(endDate, 'yyyy년 MM월 dd일')} 기준
-                      </p>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <h3 className="text-lg font-bold mb-2">자산</h3>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>항목</TableHead>
-                                <TableHead className="text-right">금액</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {isLoadingBalanceSheet ? (
-                                <TableRow>
-                                  <TableCell colSpan={2} className="text-center py-10">
-                                    데이터를 불러오는 중...
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                <>
-                                  <TableRow>
-                                    <TableCell colSpan={2} className="font-bold bg-gray-50">유동자산</TableCell>
-                                  </TableRow>
-                                  {balanceSheetData.currentAssets && balanceSheetData.currentAssets.map((item: any, index: number) => (
-                                    <TableRow key={`current-asset-${index}`}>
-                                      <TableCell className="pl-8">{item.name}</TableCell>
-                                      <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow>
-                                    <TableCell className="font-bold">유동자산 소계</TableCell>
-                                    <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.currentAssets))}원</TableCell>
-                                  </TableRow>
-                                  
-                                  <TableRow>
-                                    <TableCell colSpan={2} className="font-bold bg-gray-50">비유동자산</TableCell>
-                                  </TableRow>
-                                  {balanceSheetData.nonCurrentAssets && balanceSheetData.nonCurrentAssets.map((item: any, index: number) => (
-                                    <TableRow key={`non-current-asset-${index}`}>
-                                      <TableCell className="pl-8">{item.name}</TableCell>
-                                      <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow>
-                                    <TableCell className="font-bold">비유동자산 소계</TableCell>
-                                    <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.nonCurrentAssets))}원</TableCell>
-                                  </TableRow>
-                                </>
-                              )}
-                            </TableBody>
-                            <TableFooter>
-                              <TableRow>
-                                <TableCell className="font-bold">자산 총계</TableCell>
-                                <TableCell className="text-right font-bold">
-                                  {formatAmount(
-                                    calculateTotal(balanceSheetData.currentAssets) + 
-                                    calculateTotal(balanceSheetData.nonCurrentAssets)
-                                  )}원
-                                </TableCell>
-                              </TableRow>
-                            </TableFooter>
-                          </Table>
-                        </div>
-                        
-                        <div>
-                          <h3 className="text-lg font-bold mb-2">부채 및 자본</h3>
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>항목</TableHead>
-                                <TableHead className="text-right">금액</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {isLoadingBalanceSheet ? (
-                                <TableRow>
-                                  <TableCell colSpan={2} className="text-center py-10">
-                                    데이터를 불러오는 중...
-                                  </TableCell>
-                                </TableRow>
-                              ) : (
-                                <>
-                                  <TableRow>
-                                    <TableCell colSpan={2} className="font-bold bg-gray-50">유동부채</TableCell>
-                                  </TableRow>
-                                  {balanceSheetData.currentLiabilities && balanceSheetData.currentLiabilities.map((item: any, index: number) => (
-                                    <TableRow key={`current-liability-${index}`}>
-                                      <TableCell className="pl-8">{item.name}</TableCell>
-                                      <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow>
-                                    <TableCell className="font-bold">유동부채 소계</TableCell>
-                                    <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.currentLiabilities))}원</TableCell>
-                                  </TableRow>
-                                  
-                                  <TableRow>
-                                    <TableCell colSpan={2} className="font-bold bg-gray-50">비유동부채</TableCell>
-                                  </TableRow>
-                                  {balanceSheetData.nonCurrentLiabilities && balanceSheetData.nonCurrentLiabilities.map((item: any, index: number) => (
-                                    <TableRow key={`non-current-liability-${index}`}>
-                                      <TableCell className="pl-8">{item.name}</TableCell>
-                                      <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow>
-                                    <TableCell className="font-bold">비유동부채 소계</TableCell>
-                                    <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.nonCurrentLiabilities))}원</TableCell>
-                                  </TableRow>
-                                  
-                                  <TableRow>
-                                    <TableCell className="font-bold">부채 총계</TableCell>
-                                    <TableCell className="text-right font-bold">
-                                      {formatAmount(
-                                        calculateTotal(balanceSheetData.currentLiabilities) + 
-                                        calculateTotal(balanceSheetData.nonCurrentLiabilities)
-                                      )}원
-                                    </TableCell>
-                                  </TableRow>
-                                  
-                                  <TableRow>
-                                    <TableCell colSpan={2} className="font-bold bg-gray-50">자본</TableCell>
-                                  </TableRow>
-                                  {balanceSheetData.equity && balanceSheetData.equity.map((item: any, index: number) => (
-                                    <TableRow key={`equity-${index}`}>
-                                      <TableCell className="pl-8">{item.name}</TableCell>
-                                      <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                    </TableRow>
-                                  ))}
-                                  <TableRow>
-                                    <TableCell className="font-bold">자본 총계</TableCell>
-                                    <TableCell className="text-right font-bold">{formatAmount(calculateTotal(balanceSheetData.equity))}원</TableCell>
-                                  </TableRow>
-                                </>
-                              )}
-                            </TableBody>
-                            <TableFooter>
-                              <TableRow>
-                                <TableCell className="font-bold">부채 및 자본 총계</TableCell>
-                                <TableCell className="text-right font-bold">
-                                  {formatAmount(
-                                    calculateTotal(balanceSheetData.currentLiabilities) + 
-                                    calculateTotal(balanceSheetData.nonCurrentLiabilities) +
-                                    calculateTotal(balanceSheetData.equity)
-                                  )}원
-                                </TableCell>
-                              </TableRow>
-                            </TableFooter>
-                          </Table>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-                
-                <TabsContent value="cash-flow">
-                  <Card>
-                    <CardHeader className="text-center">
-                      <CardTitle>현금흐름표</CardTitle>
-                      <p className="text-sm text-gray-500">
-                        {format(startDate, 'yyyy년 MM월 dd일')} ~ {format(endDate, 'yyyy년 MM월 dd일')}
-                      </p>
-                    </CardHeader>
-                    <CardContent>
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-3/5">항목</TableHead>
-                            <TableHead className="text-right">금액</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {isLoadingCashFlow ? (
-                            <TableRow>
-                              <TableCell colSpan={2} className="text-center py-10">
-                                데이터를 불러오는 중...
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            <>
-                              <TableRow>
-                                <TableCell className="font-bold">기초 현금 및 현금성 자산</TableCell>
-                                <TableCell className="text-right">{formatAmount(cashFlowData.beginningCash || 0)}원</TableCell>
-                              </TableRow>
-                              
-                              <TableRow>
-                                <TableCell colSpan={2} className="font-bold bg-gray-50">영업활동 현금흐름</TableCell>
-                              </TableRow>
-                              {cashFlowData.operatingActivities && cashFlowData.operatingActivities.map((item: any, index: number) => (
-                                <TableRow key={`operating-${index}`}>
-                                  <TableCell className="pl-8">{item.name}</TableCell>
-                                  <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                </TableRow>
-                              ))}
-                              <TableRow>
-                                <TableCell className="font-bold">영업활동 현금흐름 소계</TableCell>
-                                <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.operatingActivities))}원</TableCell>
-                              </TableRow>
-                              
-                              <TableRow>
-                                <TableCell colSpan={2} className="font-bold bg-gray-50">투자활동 현금흐름</TableCell>
-                              </TableRow>
-                              {cashFlowData.investingActivities && cashFlowData.investingActivities.map((item: any, index: number) => (
-                                <TableRow key={`investing-${index}`}>
-                                  <TableCell className="pl-8">{item.name}</TableCell>
-                                  <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                </TableRow>
-                              ))}
-                              <TableRow>
-                                <TableCell className="font-bold">투자활동 현금흐름 소계</TableCell>
-                                <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.investingActivities))}원</TableCell>
-                              </TableRow>
-                              
-                              <TableRow>
-                                <TableCell colSpan={2} className="font-bold bg-gray-50">재무활동 현금흐름</TableCell>
-                              </TableRow>
-                              {cashFlowData.financingActivities && cashFlowData.financingActivities.map((item: any, index: number) => (
-                                <TableRow key={`financing-${index}`}>
-                                  <TableCell className="pl-8">{item.name}</TableCell>
-                                  <TableCell className="text-right">{formatAmount(item.amount)}원</TableCell>
-                                </TableRow>
-                              ))}
-                              <TableRow>
-                                <TableCell className="font-bold">재무활동 현금흐름 소계</TableCell>
-                                <TableCell className="text-right font-bold">{formatAmount(calculateTotal(cashFlowData.financingActivities))}원</TableCell>
-                              </TableRow>
-                              
-                              <TableRow>
-                                <TableCell className="font-bold">현금흐름 순증감</TableCell>
-                                <TableCell className="text-right font-bold">
-                                  {formatAmount(
-                                    calculateTotal(cashFlowData.operatingActivities) + 
-                                    calculateTotal(cashFlowData.investingActivities) +
-                                    calculateTotal(cashFlowData.financingActivities)
-                                  )}원
-                                </TableCell>
-                              </TableRow>
-                            </>
-                          )}
-                        </TableBody>
-                        <TableFooter>
-                          <TableRow>
-                            <TableCell className="font-bold">기말 현금 및 현금성 자산</TableCell>
-                            <TableCell className="text-right font-bold">
-                              {formatAmount(
-                                (cashFlowData.beginningCash || 0) + 
-                                calculateTotal(cashFlowData.operatingActivities) + 
-                                calculateTotal(cashFlowData.investingActivities) +
-                                calculateTotal(cashFlowData.financingActivities)
-                              )}원
-                            </TableCell>
-                          </TableRow>
-                        </TableFooter>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-              </Tabs>
-            </div>
+            <Dialog open={isPrintDialogOpen} onOpenChange={setIsPrintDialogOpen}>
+              <DialogContent className="max-w-4xl print-area">
+                <DialogHeader>
+                  <DialogTitle>재무제표 인쇄 미리보기</DialogTitle>
+                </DialogHeader>
+                <div className="mb-4 flex flex-col items-center">
+                  <h2 className="text-2xl font-bold mb-1">재무제표</h2>
+                  <div className="text-sm text-gray-500 mb-2">
+                    {format(new Date(), 'yyyy년 MM월 dd일')} 기준
+                  </div>
+                </div>
+                <div ref={printRef} className="print-area bg-white p-4 rounded shadow max-h-[80vh] overflow-y-auto">
+                  <FinancialSummary />
+                  <IncomeStatement />
+                  <BalanceSheet />
+                  <CashFlowStatement />
+                </div>
+                <DialogFooter className="no-print">
+                  <Button onClick={handlePrint} className="flex items-center gap-2">
+                    <Printer className="h-4 w-4" />
+                    인쇄 시작
+                  </Button>
+                  <DialogClose asChild>
+                    <Button variant="outline">닫기</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </div>
         </main>
         
