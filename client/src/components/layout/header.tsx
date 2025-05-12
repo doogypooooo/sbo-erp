@@ -32,6 +32,7 @@ export default function Header() {
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
         setLocation("/auth");
+        setTimeout(() => window.location.reload(), 100);
       }
     });
   };
