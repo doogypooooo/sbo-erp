@@ -74,6 +74,17 @@ export default function TaxInvoicesPage() {
   
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editInvoice, setEditInvoice] = useState<TaxInvoice | null>(null);
+  const [editType, setEditType] = useState('');
+  
+  useEffect(() => {
+    if (isEditDialogOpen && editInvoice) {
+      // 타입 변환: DB 값이 'issue'/'receive'라면 'sales'/'purchase'로 변환
+      let mappedType = editInvoice.type;
+      if (editInvoice.type === 'issue') mappedType = 'sales';
+      else if (editInvoice.type === 'receive') mappedType = 'purchase';
+      setEditType(mappedType);
+    }
+  }, [isEditDialogOpen, editInvoice]);
   
   // 세금계산서 목록 조회
   const { data: taxInvoices = [], isLoading: isLoadingInvoices, refetch } = useQuery({
@@ -346,7 +357,7 @@ export default function TaxInvoicesPage() {
   
   // 세금계산서 국세청 전송
   const handleSubmitToTaxOffice = (id: number) => {
-    sendToTaxOfficeMutation.mutate(id);
+    toast({ title: '국세청 전송은 추후 지원 예정입니다.', variant: 'destructive' });
   };
 
   // 수정 핸들러
@@ -430,7 +441,7 @@ export default function TaxInvoicesPage() {
                   partners={partners}
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
-                  onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onSubmitToTaxOffice={(id) => toast({ title: '국세청 전송은 추후 지원 예정입니다.', variant: 'destructive' })}
                   onEdit={handleEdit}
                   onPublish={handlePublish}
                   onDelete={handleDelete}
@@ -444,7 +455,7 @@ export default function TaxInvoicesPage() {
                   partners={partners}
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
-                  onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onSubmitToTaxOffice={(id) => toast({ title: '국세청 전송은 추후 지원 예정입니다.', variant: 'destructive' })}
                   onEdit={handleEdit}
                   onPublish={handlePublish}
                   onDelete={handleDelete}
@@ -458,7 +469,7 @@ export default function TaxInvoicesPage() {
                   partners={partners}
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
-                  onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onSubmitToTaxOffice={(id) => toast({ title: '국세청 전송은 추후 지원 예정입니다.', variant: 'destructive' })}
                   onEdit={handleEdit}
                   onPublish={handlePublish}
                   onDelete={handleDelete}
@@ -708,140 +719,274 @@ export default function TaxInvoicesPage() {
               </DialogContent>
             </Dialog>
             
+            {/* 세금계산서 수정 다이얼로그 */}
+            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>세금계산서 수정</DialogTitle>
+                </DialogHeader>
+                {editInvoice && (
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    // 폼 데이터 수집
+                    const form = e.currentTarget as HTMLFormElement;
+                    const formData = new FormData(form);
+                    // 저장 시 다시 'sales'/'purchase'를 'issue'/'receive'로 변환
+                    let apiType = editType;
+                    if (editType === 'sales') apiType = 'issue';
+                    else if (editType === 'purchase') apiType = 'receive';
+                    const updated = {
+                      code: formData.get('code') as string,
+                      type: apiType,
+                      date: formData.get('date') as string,
+                      partnerId: Number(formData.get('partnerId')),
+                      netAmount: Number(formData.get('netAmount')),
+                      taxRate: Number(formData.get('taxRate')),
+                      taxAmount: Number(formData.get('taxAmount')),
+                      totalAmount: Number(formData.get('totalAmount')),
+                      status: editInvoice.status,
+                      transactionId: editInvoice.transactionId
+                    };
+                    try {
+                      await apiRequest('PATCH', `/api/accounting/tax-invoices/${editInvoice.id}`, updated);
+                      setIsEditDialogOpen(false);
+                      refetch();
+                      toast({ title: '수정 완료', description: '세금계산서가 수정되었습니다.' });
+                    } catch (err: any) {
+                      toast({ title: '수정 실패', description: err.message, variant: 'destructive' });
+                    }
+                  }} className="space-y-4">
+                    <div className="space-y-2 flex-grow">
+                      <Label htmlFor="code">문서번호</Label>
+                      <Input
+                        id="code"
+                        name="code"
+                        defaultValue={editInvoice.code}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="type">세금계산서 종류</Label>
+                      <Select value={editType} onValueChange={setEditType}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="세금계산서 종류" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sales">매출 세금계산서</SelectItem>
+                          <SelectItem value="purchase">매입 세금계산서</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="date">작성일자</Label>
+                      <Input
+                        id="date"
+                        name="date"
+                        type="date"
+                        defaultValue={editInvoice.date}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="partnerId">거래처</Label>
+                      <Select name="partnerId" defaultValue={editInvoice.partnerId?.toString()}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="거래처 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {partners.map(partner => (
+                            <SelectItem key={partner.id} value={partner.id.toString()}>
+                              {partner.name} ({partner.businessNumber || '사업자번호 미등록'})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="netAmount">공급가액</Label>
+                        <Input
+                          id="netAmount"
+                          name="netAmount"
+                          type="number"
+                          defaultValue={editInvoice.netAmount}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="taxRate">세율(%)</Label>
+                        <Input
+                          id="taxRate"
+                          name="taxRate"
+                          type="number"
+                          min={0}
+                          max={100}
+                          defaultValue={editInvoice.taxRate ?? 10}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="taxAmount">세액</Label>
+                        <Input
+                          id="taxAmount"
+                          name="taxAmount"
+                          type="number"
+                          defaultValue={editInvoice.taxAmount}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="totalAmount">총액</Label>
+                      <Input
+                        id="totalAmount"
+                        name="totalAmount"
+                        type="number"
+                        defaultValue={editInvoice.totalAmount}
+                        required
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit">저장</Button>
+                    </DialogFooter>
+                  </form>
+                )}
+              </DialogContent>
+            </Dialog>
+            
             {/* 세금계산서 미리보기 다이얼로그 */}
             <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
               <DialogContent className="max-w-4xl">
                 <DialogHeader>
                   <DialogTitle>세금계산서 미리보기</DialogTitle>
                 </DialogHeader>
-                
                 {selectedInvoice && (
-                  <div ref={printRef} className="p-6 bg-white">
-                    <style>{`
-                      .tax-invoice-table { border-collapse: collapse; width: 100%; font-family: '돋움', Dotum, Arial, sans-serif; font-size: 12px; color: #0033cc; }
-                      .tax-invoice-table td { border: 1px solid #0033cc; text-align: center; padding: 2px 4px; height: 24px; }
-                      .tax-invoice-table .cell-title { font-size: 28px; font-weight: bold; letter-spacing: 16px; border: none; text-align: center; padding: 16px 0 8px 0; }
-                      .tax-invoice-table .cell-label { font-weight: bold; background: #fff; }
-                      .tax-invoice-table .cell-box { background: #fff; }
-                      .tax-invoice-table .cell-blank { border: none; background: #fff; }
-                    `}</style>
-                    <table className="tax-invoice-table">
-                      <tbody>
-                        <tr>
-                          <td className="cell-blank" colSpan={18} style={{ border: 'none', textAlign: 'left', fontSize: 11 }}>[별지 제11호 서식]</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-title" colSpan={18} style={{ color: '#0033cc', border: 'none', paddingBottom: 0 }}>세 금 계 산 서</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={3} rowSpan={2}>공급자</td>
-                          <td className="cell-label" colSpan={6}>등록번호</td>
-                          <td className="cell-label" colSpan={3} rowSpan={2}>공급받는자</td>
-                          <td className="cell-label" colSpan={6}>등록번호</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-box" colSpan={6}>{myCompany.businessNumber}</td>
-                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.businessNumber || ''; })()}</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={3}>상호(법인명)</td>
-                          <td className="cell-box" colSpan={6}>{myCompany.name}</td>
-                          <td className="cell-label" colSpan={3}>상호(법인명)</td>
-                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.name || ''; })()}</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={3}>성명</td>
-                          <td className="cell-box" colSpan={6}>{myCompany.contactName}</td>
-                          <td className="cell-label" colSpan={3}>성명</td>
-                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.contactName || ''; })()}</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={3}>사업장주소</td>
-                          <td className="cell-box" colSpan={6}>{myCompany.address}</td>
-                          <td className="cell-label" colSpan={3}>사업장주소</td>
-                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.address || ''; })()}</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={3}>업태</td>
-                          <td className="cell-box" colSpan={3}>{myCompany.type}</td>
-                          <td className="cell-label" colSpan={3}>종목</td>
-                          <td className="cell-box" colSpan={3}>{myCompany.category}</td>
-                          <td className="cell-label" colSpan={3}>업태</td>
-                          <td className="cell-box" colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.type || ''; })()}</td>
-                          <td className="cell-label" colSpan={3}>종목</td>
-                          <td className="cell-box" colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return (partner as any)?.category || ''; })()}</td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={2}>작성년월일</td>
-                          <td className="cell-box" colSpan={2}>{new Date(selectedInvoice.date).getFullYear()}</td>
-                          <td className="cell-box" colSpan={1}>{new Date(selectedInvoice.date).getMonth() + 1}</td>
-                          <td className="cell-box" colSpan={1}>{new Date(selectedInvoice.date).getDate()}</td>
-                          <td className="cell-label" colSpan={2}>공급가액</td>
-                          <td className="cell-box" colSpan={2}>{selectedInvoice.netAmount.toLocaleString()}</td>
-                          <td className="cell-label" colSpan={2}>세액</td>
-                          <td className="cell-box" colSpan={2}>{selectedInvoice.taxAmount.toLocaleString()}</td>
-                          <td className="cell-label" colSpan={2}>비고</td>
-                          <td className="cell-box" colSpan={2}></td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={2}>월일</td>
-                          <td className="cell-label" colSpan={3}>품목</td>
-                          <td className="cell-label" colSpan={2}>규격</td>
-                          <td className="cell-label" colSpan={2}>수량</td>
-                          <td className="cell-label" colSpan={2}>단가</td>
-                          <td className="cell-label" colSpan={2}>공급가액</td>
-                          <td className="cell-label" colSpan={2}>세액</td>
-                          <td className="cell-label" colSpan={2}>비고</td>
-                        </tr>
-                        {/* 품목 5줄(빈칸 포함) */}
-                        {[...Array(5)].map((_, idx) => (
-                          <tr key={idx}>
-                            <td className="cell-box" colSpan={2}>{idx === 0 ? `${new Date(selectedInvoice.date).getMonth() + 1}/${new Date(selectedInvoice.date).getDate()}` : ''}</td>
-                            <td className="cell-box" colSpan={3}>{idx === 0 ? (selectedInvoice.transactionId ? transactions.find(t => t.id === selectedInvoice.transactionId)?.code : '일반거래') : ''}</td>
-                            <td className="cell-box" colSpan={2}></td>
-                            <td className="cell-box" colSpan={2}>{idx === 0 ? 1 : ''}</td>
-                            <td className="cell-box" colSpan={2}></td>
-                            <td className="cell-box" colSpan={2}>{idx === 0 ? selectedInvoice.netAmount.toLocaleString() : ''}</td>
-                            <td className="cell-box" colSpan={2}>{idx === 0 ? selectedInvoice.taxAmount.toLocaleString() : ''}</td>
-                            <td className="cell-box" colSpan={2}></td>
-                          </tr>
-                        ))}
-                        <tr>
-                          <td className="cell-label" colSpan={3}>합계금액</td>
-                          <td className="cell-box" colSpan={3}>{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td>
-                          <td className="cell-label" colSpan={2}>현금</td>
-                          <td className="cell-box" colSpan={2}></td>
-                          <td className="cell-label" colSpan={2}>수표</td>
-                          <td className="cell-box" colSpan={2}></td>
-                          <td className="cell-label" colSpan={2}>어음</td>
-                          <td className="cell-box" colSpan={2}></td>
-                          <td className="cell-label" colSpan={2}>외상미수금</td>
-                          <td className="cell-box" colSpan={2}></td>
-                        </tr>
-                        <tr>
-                          <td className="cell-label" colSpan={18} style={{ textAlign: 'right', fontWeight: 'bold', fontSize: 13 }}>
-                            이 금액을 <span style={{ fontWeight: 'bold', fontSize: 15 }}>영수</span>함
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="cell-blank" colSpan={18} style={{ border: 'none', textAlign: 'left', fontSize: 11 }}>
-                            22226-28131일 '96.3.27승인 &nbsp; 인쇄용지(특급) 182mm×128mm
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                  <div ref={printRef} className="p-6 bg-white space-y-12">
+                    {/* 2종(공급받는자/공급자) 한 번에 표시 - 첨부 이미지와 최대한 동일하게 구현 */}
+                    {[
+                      { label: '공급받는자 보관용', color: '#0033cc', border: 'blue' },
+                      { label: '공급자 보관용', color: '#cc0000', border: 'red' },
+                    ].map(({ label, color, border }) => (
+                      <div key={label} className="flex flex-col items-center">
+                        <div className="w-full max-w-[600px] bg-white p-2 rounded shadow border overflow-x-auto" style={{ borderColor: color }}>
+                          <style>{`
+                            .tax-invoice-table-${border} { border-collapse: collapse; width: 100%; font-family: '돋움', Dotum, Arial, sans-serif; font-size: 12px; color: ${color}; }
+                            .tax-invoice-table-${border} th, .tax-invoice-table-${border} td { border: 2px solid ${color}; text-align: center; padding: 1px 2px; height: 20px; }
+                            .tax-invoice-table-${border} .title { font-size: 20px; font-weight: bold; letter-spacing: 8px; border: none; text-align: center; padding: 8px 0 4px 0; }
+                            .tax-invoice-table-${border} .sub-label { font-size: 12px; font-weight: bold; border: none; text-align: right; padding-right: 4px; }
+                            .tax-invoice-table-${border} .small { font-size: 10px; }
+                            .tax-invoice-table-${border} .no-border { border: none !important; }
+                          `}</style>
+                          <div style={{maxHeight: '500px', overflowY: 'auto'}}>
+                            <table className={`tax-invoice-table-${border}`}> 
+                              <tbody>
+                                <tr>
+                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'left' }}>[별지 제11호 서식]</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={16} className="title" style={{ color }}>{'세 금 계 산 서'}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={16} className="no-border sub-label" style={{ color, textAlign: 'right', paddingBottom: 0 }}>
+                                    ({label})
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <th rowSpan={2}>공급자<br/>등록번호</th>
+                                  <td rowSpan={2} colSpan={3}>{myCompany.businessNumber}</td>
+                                  <th rowSpan={2}>상호(법인명)</th>
+                                  <td rowSpan={2} colSpan={2}>{myCompany.name}</td>
+                                  <th rowSpan={2}>성명</th>
+                                  <td rowSpan={2}>{myCompany.contactName}</td>
+                                  <th rowSpan={2}>사업장주소</th>
+                                  <td rowSpan={2} colSpan={3}>{myCompany.address}</td>
+                                  <th rowSpan={2}>업태</th>
+                                  <td rowSpan={2}>{myCompany.type}</td>
+                                  <th rowSpan={2}>종목</th>
+                                  <td rowSpan={2}>{myCompany.category}</td>
+                                </tr>
+                                <tr></tr>
+                                <tr>
+                                  <th rowSpan={2}>공급받는자<br/>등록번호</th>
+                                  <td rowSpan={2} colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.businessNumber || ''; })()}</td>
+                                  <th rowSpan={2}>상호(법인명)</th>
+                                  <td rowSpan={2} colSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.name || ''; })()}</td>
+                                  <th rowSpan={2}>성명</th>
+                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.contactName || ''; })()}</td>
+                                  <th rowSpan={2}>사업장주소</th>
+                                  <td rowSpan={2} colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.address || ''; })()}</td>
+                                  <th rowSpan={2}>업태</th>
+                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.type || ''; })()}</td>
+                                  <th rowSpan={2}>종목</th>
+                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return (partner as any)?.category || ''; })()}</td>
+                                </tr>
+                                <tr></tr>
+                                <tr>
+                                  <th>작성년월일</th>
+                                  <td colSpan={2}>{new Date(selectedInvoice.date).getFullYear()}</td>
+                                  <td>{new Date(selectedInvoice.date).getMonth() + 1}</td>
+                                  <td>{new Date(selectedInvoice.date).getDate()}</td>
+                                  <th>공급가액</th>
+                                  <td colSpan={2}>{selectedInvoice.netAmount.toLocaleString()}</td>
+                                  <th>세액</th>
+                                  <td colSpan={2}>{selectedInvoice.taxAmount.toLocaleString()}</td>
+                                  <th colSpan={2}>비고</th>
+                                  <td colSpan={3}></td>
+                                </tr>
+                                <tr>
+                                  <th>월일</th>
+                                  <th colSpan={3}>품목</th>
+                                  <th colSpan={2}>규격</th>
+                                  <th>수량</th>
+                                  <th>단가</th>
+                                  <th colSpan={2}>공급가액</th>
+                                  <th colSpan={2}>세액</th>
+                                  <th colSpan={3}>비고</th>
+                                </tr>
+                                {[...Array(5)].map((_, idx) => (
+                                  <tr key={idx}>
+                                    <td>{idx === 0 ? `${new Date(selectedInvoice.date).getMonth() + 1}/${new Date(selectedInvoice.date).getDate()}` : ''}</td>
+                                    <td colSpan={3}>{idx === 0 ? (selectedInvoice.transactionId ? transactions.find(t => t.id === selectedInvoice.transactionId)?.code : '일반거래') : ''}</td>
+                                    <td colSpan={2}></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td colSpan={2}>{idx === 0 ? selectedInvoice.netAmount.toLocaleString() : ''}</td>
+                                    <td colSpan={2}>{idx === 0 ? selectedInvoice.taxAmount.toLocaleString() : ''}</td>
+                                    <td colSpan={3}></td>
+                                  </tr>
+                                ))}
+                                <tr>
+                                  <th colSpan={8}>합계금액</th>
+                                  <td colSpan={2}>{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td>
+                                  <th colSpan={2}>현금</th>
+                                  <td colSpan={2}></td>
+                                  <th>수표</th>
+                                  <td></td>
+                                </tr>
+                                <tr>
+                                  <th colSpan={8}>어음</th>
+                                  <td colSpan={2}></td>
+                                  <th colSpan={2}>외상미수금</th>
+                                  <td colSpan={4}></td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'right', fontWeight: 'bold' }}>
+                                    이 금액을 영수함
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'left' }}>
+                                    22226-28131일 '96.3.27승인 &nbsp; 인쇄용지(특급) 182mm×128mm
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
-                
-                <div className="flex justify-end space-x-2">
-                  <Button onClick={handlePrint} className="flex items-center gap-2">
-                    <Printer className="h-4 w-4" />
-                    인쇄
-                  </Button>
-                  <Button onClick={() => setIsPreviewOpen(false)} variant="outline">
-                    닫기
-                  </Button>
-                </div>
               </DialogContent>
             </Dialog>
           </div>
@@ -885,6 +1030,19 @@ function getInvoiceStatusClass(status: string) {
 function getPartnerName(partnerId: number, partners: Partner[]) {
   const partner = partners.find(p => p.id === partnerId);
   return partner ? partner.name : '-';
+}
+
+// 세금계산서 종류 변환 함수
+function getInvoiceTypeLabel(type: string) {
+  if (type === 'sales' || type === 'issue') return '매출';
+  if (type === 'purchase' || type === 'receive') return '매입';
+  return type;
+}
+
+function getInvoiceTypeClass(type: string) {
+  if (type === 'sales' || type === 'issue') return 'bg-blue-100 text-blue-800';
+  if (type === 'purchase' || type === 'receive') return 'bg-orange-100 text-orange-800';
+  return 'bg-gray-100 text-gray-800';
 }
 
 // 세금계산서 테이블 컴포넌트
@@ -946,8 +1104,8 @@ function TaxInvoicesTable({
                 <TableCell className="font-medium">{invoice.code}</TableCell>
                 <TableCell>{getPartnerName(invoice.partnerId, partners)}</TableCell>
                 <TableCell>
-                  <span className={`px-2 py-1 text-xs rounded-full ${invoice.type === 'sales' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'}`}>
-                    {invoice.type === 'sales' ? '매출' : '매입'}
+                  <span className={`px-2 py-1 text-xs rounded-full ${getInvoiceTypeClass(invoice.type)}`}>
+                    {getInvoiceTypeLabel(invoice.type)}
                   </span>
                 </TableCell>
                 <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
@@ -985,7 +1143,7 @@ function TaxInvoicesTable({
                             <Trash2 className="mr-2 h-4 w-4" />
                             삭제
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => toast({ title: '아직 지원되지 않는 기능입니다.', variant: 'destructive' })}>
+                          <DropdownMenuItem onClick={() => onSubmitToTaxOffice(invoice.id)}>
                             <Send className="mr-2 h-4 w-4" />
                             국세청 전송
                           </DropdownMenuItem>

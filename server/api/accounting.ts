@@ -712,24 +712,20 @@ accountingRouter.post("/tax-invoices", checkPermission('tax', 'write'), async (r
   }
 });
 
-// 세금계산서 상태 업데이트
-accountingRouter.put("/tax-invoices/:id/status", checkPermission('tax', 'write'), async (req, res, next) => {
+// 세금계산서 상태 업데이트 (PATCH도 지원)
+accountingRouter.patch("/tax-invoices/:id/status", checkPermission('tax', 'write'), async (req, res, next) => {
   try {
     const invoiceId = parseInt(req.params.id);
     const { status } = req.body;
-    
     const invoice = await storage.getTaxInvoice(invoiceId);
     if (!invoice) {
       return res.status(404).json({ message: "세금계산서를 찾을 수 없습니다." });
     }
-    
     // 상태 유효성 검증
     if (!['issued', 'canceled'].includes(status)) {
       return res.status(400).json({ message: "유효하지 않은 상태입니다." });
     }
-    
     const updatedInvoice = await storage.updateTaxInvoice(invoiceId, { status });
-    
     res.json(updatedInvoice);
   } catch (error) {
     next(error);
@@ -749,6 +745,25 @@ accountingRouter.delete("/tax-invoices/:id", checkPermission('tax', 'delete'), a
       return res.status(500).json({ message: "세금계산서 삭제에 실패했습니다." });
     }
     res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 세금계산서 부분 수정
+accountingRouter.patch("/tax-invoices/:id", checkPermission('tax', 'write'), async (req, res, next) => {
+  try {
+    const invoiceId = parseInt(req.params.id);
+    const updateData = req.body;
+    const invoice = await storage.getTaxInvoice(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: "세금계산서를 찾을 수 없습니다." });
+    }
+    const updatedInvoice = await storage.updateTaxInvoice(invoiceId, updateData);
+    if (!updatedInvoice) {
+      return res.status(500).json({ message: "세금계산서 정보 업데이트에 실패했습니다." });
+    }
+    res.json(updatedInvoice);
   } catch (error) {
     next(error);
   }
