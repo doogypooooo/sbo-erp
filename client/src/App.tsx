@@ -17,6 +17,7 @@ import PaymentsPage from "@/pages/accounting/payments";
 import StatementsPage from "@/pages/accounting/statements";
 import TaxInvoicesPage from "@/pages/accounting/tax-invoices";
 import UsersPage from "@/pages/settings/users";
+import PreferencesPage from "@/pages/settings/preferences";
 
 function Router() {
   return (
@@ -35,6 +36,7 @@ function Router() {
       <ProtectedRoute path="/accounting/statements" component={StatementsPage} />
       <ProtectedRoute path="/accounting/tax-invoices" component={TaxInvoicesPage} />
       <ProtectedRoute path="/settings/users" component={UsersPage} />
+      <ProtectedRoute path="/settings/preferences" component={PreferencesPage} />
       <Route component={NotFound} />
     </Switch>
   );

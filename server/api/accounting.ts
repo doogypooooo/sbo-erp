@@ -736,6 +736,24 @@ accountingRouter.put("/tax-invoices/:id/status", checkPermission('tax', 'write')
   }
 });
 
+// 세금계산서 삭제
+accountingRouter.delete("/tax-invoices/:id", checkPermission('tax', 'delete'), async (req, res, next) => {
+  try {
+    const invoiceId = parseInt(req.params.id);
+    const invoice = await storage.getTaxInvoice(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: "세금계산서를 찾을 수 없습니다." });
+    }
+    const deleted = await storage.deleteTaxInvoice(invoiceId);
+    if (!deleted) {
+      return res.status(500).json({ message: "세금계산서 삭제에 실패했습니다." });
+    }
+    res.status(204).end();
+  } catch (error) {
+    next(error);
+  }
+});
+
 // 손익계산서 API
 accountingRouter.get("/statements/income", checkPermission('statements', 'read'), async (req, res, next) => {
   try {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { 
   Table, 
@@ -30,7 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Partner, Transaction, InsertTaxInvoice, TaxInvoice } from "@shared/schema";
-import { CalendarIcon, Download, Plus, Printer, Search, Send } from "lucide-react";
+import { CalendarIcon, Download, Plus, Printer, Search, Send, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -45,6 +45,8 @@ import { useRef } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import Header from "@/components/layout/header";
 import Footer from "@/components/layout/footer";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import axios from "axios";
 
 export default function TaxInvoicesPage() {
   const { toast } = useToast();
@@ -54,24 +56,32 @@ export default function TaxInvoicesPage() {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   
-  const [invoiceData, setInvoiceData] = useState<Partial<InsertTaxInvoice>>({
+  const [invoiceData, setInvoiceData] = useState<Partial<InsertTaxInvoice> & { taxRate?: number }>({
     code: "",
     type: "sales",
     date: new Date().toISOString().split('T')[0],
     partnerId: 0,
-    amount: 0,
+    netAmount: 0,
+    taxRate: 10, // 기본값 10%
     taxAmount: 0,
+    totalAmount: 0,
     status: "draft",
-    issuedAt: null,
     transactionId: null
   });
   
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [issuedDate, setIssuedDate] = useState<Date | undefined>(undefined);
   
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editInvoice, setEditInvoice] = useState<TaxInvoice | null>(null);
+  
   // 세금계산서 목록 조회
-  const { data: taxInvoices = [], isLoading: isLoadingInvoices } = useQuery({
+  const { data: taxInvoices = [], isLoading: isLoadingInvoices, refetch } = useQuery({
     queryKey: ['/api/accounting/tax-invoices'],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/accounting/tax-invoices");
+      return await res.json();
+    },
     select: (data) => data as TaxInvoice[]
   });
   
@@ -99,6 +109,7 @@ export default function TaxInvoicesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/accounting/tax-invoices'] });
+      refetch();
       setIsDialogOpen(false);
       resetForm();
       toast({
@@ -159,6 +170,21 @@ export default function TaxInvoicesPage() {
     },
   });
   
+  // 세금계산서 삭제 뮤테이션
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/accounting/tax-invoices/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/accounting/tax-invoices'] });
+      refetch();
+      toast({ title: "삭제 완료", description: "세금계산서가 삭제되었습니다." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "삭제 실패", description: error.message, variant: "destructive" });
+    }
+  });
+  
   // 인쇄 핸들러
   const handlePrint = useReactToPrint({
     content: () => printRef.current,
@@ -169,7 +195,7 @@ export default function TaxInvoicesPage() {
   // 검색된 세금계산서 목록
   const filteredInvoices = taxInvoices.filter(invoice => 
     invoice.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    invoice.partner?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (partners.find(p => p.id === invoice.partnerId)?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
     invoice.status.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
@@ -179,23 +205,24 @@ export default function TaxInvoicesPage() {
       setInvoiceData({
         ...invoiceData,
         transactionId: null,
-        amount: 0,
+        netAmount: 0,
         taxAmount: 0,
+        totalAmount: 0,
         partnerId: 0
       });
       return;
     }
-    
     const transaction = transactions.find(t => t.id === transactionId);
     if (transaction) {
       const invoiceType = transaction.type === 'sale' ? 'sales' : 'purchase';
       const taxAmount = Math.round(transaction.totalAmount * 0.1); // 10% 세율
-      
+      const netAmount = transaction.totalAmount - taxAmount;
       setInvoiceData({
         ...invoiceData,
         transactionId,
-        amount: transaction.totalAmount - taxAmount,
+        netAmount,
         taxAmount,
+        totalAmount: netAmount + taxAmount,
         partnerId: transaction.partnerId,
         type: invoiceType
       });
@@ -227,14 +254,12 @@ export default function TaxInvoicesPage() {
       setIssuedDate(date);
       setInvoiceData({
         ...invoiceData,
-        issuedAt: date.toISOString().split('T')[0],
         status: 'issued'
       });
     } else {
       setIssuedDate(undefined);
       setInvoiceData({
         ...invoiceData,
-        issuedAt: null,
         status: 'draft'
       });
     }
@@ -243,20 +268,16 @@ export default function TaxInvoicesPage() {
   // 폼 입력 핸들러
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    
-    if (name === 'amount') {
-      const amount = parseInt(value) || 0;
-      const taxAmount = Math.round(amount * 0.1); // 10% 세율
-      
+    if (name === 'netAmount' || name === 'taxRate') {
+      const netAmount = name === 'netAmount' ? parseInt(value) || 0 : invoiceData.netAmount || 0;
+      const taxRate = name === 'taxRate' ? parseFloat(value) || 0 : invoiceData.taxRate || 10;
+      const taxAmount = Math.round(netAmount * (taxRate / 100));
       setInvoiceData({
         ...invoiceData,
-        amount,
-        taxAmount
-      });
-    } else if (name === 'taxAmount') {
-      setInvoiceData({
-        ...invoiceData,
-        taxAmount: parseInt(value) || 0
+        netAmount,
+        taxRate,
+        taxAmount,
+        totalAmount: netAmount + taxAmount
       });
     } else {
       setInvoiceData({
@@ -269,8 +290,7 @@ export default function TaxInvoicesPage() {
   // 폼 제출 핸들러
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!invoiceData.partnerId || !invoiceData.amount || !invoiceData.code) {
+    if (!invoiceData.partnerId || !invoiceData.netAmount || !invoiceData.code) {
       toast({
         title: "입력 오류",
         description: "모든 필수 항목을 입력해주세요.",
@@ -278,8 +298,12 @@ export default function TaxInvoicesPage() {
       });
       return;
     }
-    
-    createInvoiceMutation.mutate(invoiceData as InsertTaxInvoice);
+    // type 변환
+    const serverType = invoiceData.type === 'sales' ? 'issue' : 'receive';
+    createInvoiceMutation.mutate({
+      ...invoiceData,
+      type: serverType,
+    } as InsertTaxInvoice);
   };
   
   // 폼 초기화
@@ -289,10 +313,11 @@ export default function TaxInvoicesPage() {
       type: "sales",
       date: new Date().toISOString().split('T')[0],
       partnerId: 0,
-      amount: 0,
+      netAmount: 0,
+      taxRate: 10,
       taxAmount: 0,
+      totalAmount: 0,
       status: "draft",
-      issuedAt: null,
       transactionId: null
     });
     setSelectedDate(new Date());
@@ -323,6 +348,46 @@ export default function TaxInvoicesPage() {
   const handleSubmitToTaxOffice = (id: number) => {
     sendToTaxOfficeMutation.mutate(id);
   };
+
+  // 수정 핸들러
+  const handleEdit = (invoice: TaxInvoice) => {
+    setEditInvoice(invoice);
+    setIsEditDialogOpen(true);
+  };
+
+  // 발행 핸들러
+  const handlePublish = (invoice: TaxInvoice) => {
+    updateInvoiceStatusMutation.mutate({ id: invoice.id, status: 'issued' });
+  };
+
+  // 삭제 핸들러
+  const handleDelete = (id: number) => {
+    if (window.confirm("정말 삭제하시겠습니까?")) {
+      deleteInvoiceMutation.mutate(id);
+    }
+  };
+
+  // 1. 공급자 정보(환경설정에서 불러옴)
+  const [myCompany, setMyCompany] = useState({
+    businessNumber: "",
+    name: "",
+    contactName: "",
+    address: "",
+    type: "",
+    category: ""
+  });
+  useEffect(() => {
+    axios.get("/api/settings/company").then((res: any) => {
+      setMyCompany({
+        businessNumber: res.data.businessNumber || "",
+        name: res.data.name || "",
+        contactName: res.data.contactName || "",
+        address: res.data.address || "",
+        type: res.data.type || "",
+        category: res.data.category || ""
+      });
+    });
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -366,6 +431,9 @@ export default function TaxInvoicesPage() {
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
                   onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onEdit={handleEdit}
+                  onPublish={handlePublish}
+                  onDelete={handleDelete}
                 />
               </TabsContent>
               
@@ -377,6 +445,9 @@ export default function TaxInvoicesPage() {
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
                   onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onEdit={handleEdit}
+                  onPublish={handlePublish}
+                  onDelete={handleDelete}
                 />
               </TabsContent>
               
@@ -388,6 +459,9 @@ export default function TaxInvoicesPage() {
                   onPreview={handlePreview}
                   onStatusChange={updateInvoiceStatusMutation.mutate}
                   onSubmitToTaxOffice={handleSubmitToTaxOffice}
+                  onEdit={handleEdit}
+                  onPublish={handlePublish}
+                  onDelete={handleDelete}
                 />
               </TabsContent>
             </Tabs>
@@ -474,13 +548,13 @@ export default function TaxInvoicesPage() {
                   <div className="space-y-2">
                     <Label htmlFor="transaction">관련 거래</Label>
                     <Select 
-                      onValueChange={(value) => handleSelectTransaction(value ? parseInt(value) : null)}
+                      onValueChange={(value) => handleSelectTransaction(value === "none" ? null : parseInt(value))}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="관련 거래 선택 (선택사항)" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">거래 없음</SelectItem>
+                        <SelectItem value="none">거래 없음</SelectItem>
                         {transactions
                           .filter(tx => 
                             (invoiceData.type === 'sales' && tx.type === 'sale') || 
@@ -524,32 +598,55 @@ export default function TaxInvoicesPage() {
                     </Select>
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="amount">공급가액</Label>
+                      <Label htmlFor="netAmount">공급가액</Label>
                       <Input
-                        id="amount"
-                        name="amount"
+                        id="netAmount"
+                        name="netAmount"
                         type="number"
                         placeholder="공급가액을 입력하세요"
-                        value={invoiceData.amount || ''}
+                        value={invoiceData.netAmount || ''}
                         onChange={handleInputChange}
                         required
                       />
                     </div>
-                    
+                    <div className="space-y-2">
+                      <Label htmlFor="taxRate">세율(%)</Label>
+                      <Input
+                        id="taxRate"
+                        name="taxRate"
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={invoiceData.taxRate ?? 10}
+                        onChange={handleInputChange}
+                        required
+                      />
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="taxAmount">세액</Label>
                       <Input
                         id="taxAmount"
                         name="taxAmount"
                         type="number"
-                        placeholder="세액을 입력하세요"
+                        placeholder="세액"
                         value={invoiceData.taxAmount || ''}
-                        onChange={handleInputChange}
-                        required
+                        readOnly
                       />
                     </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="totalAmount">총액</Label>
+                    <Input
+                      id="totalAmount"
+                      name="totalAmount"
+                      type="number"
+                      placeholder="총액"
+                      value={invoiceData.totalAmount || ''}
+                      readOnly
+                    />
                   </div>
                   
                   <div className="space-y-2">
@@ -620,125 +717,119 @@ export default function TaxInvoicesPage() {
                 
                 {selectedInvoice && (
                   <div ref={printRef} className="p-6 bg-white">
-                    <div className="text-center font-bold text-2xl mb-4">
-                      {selectedInvoice.type === 'sales' ? '(매출) 세금계산서' : '(매입) 세금계산서'}
-                    </div>
-                    
-                    <div className="border border-gray-300 mb-6">
-                      <div className="grid grid-cols-5 border-b border-gray-300">
-                        <div className="col-span-3 grid grid-cols-3 border-r border-gray-300">
-                          <div className="bg-gray-100 p-2 font-semibold text-center border-r border-gray-300">발행 번호</div>
-                          <div className="col-span-2 p-2">{selectedInvoice.code}</div>
-                        </div>
-                        <div className="col-span-2 grid grid-cols-2">
-                          <div className="bg-gray-100 p-2 font-semibold text-center border-r border-gray-300">작성일자</div>
-                          <div className="p-2">{new Date(selectedInvoice.date).toLocaleDateString()}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2">
-                        <div className="border-r border-gray-300">
-                          <div className="bg-gray-200 p-2 font-bold text-center border-b border-gray-300">
-                            {selectedInvoice.type === 'sales' ? '공급자' : '공급받는자'}
-                          </div>
-                          <div className="p-3 space-y-2">
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">상호</span>
-                              <span className="col-span-3">우리 회사</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">사업자번호</span>
-                              <span className="col-span-3">123-45-67890</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">대표자</span>
-                              <span className="col-span-3">홍길동</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">주소</span>
-                              <span className="col-span-3">서울시 강남구 테헤란로 123</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">업태</span>
-                              <span className="col-span-3">도소매</span>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="bg-gray-200 p-2 font-bold text-center border-b border-gray-300">
-                            {selectedInvoice.type === 'sales' ? '공급받는자' : '공급자'}
-                          </div>
-                          <div className="p-3 space-y-2">
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">상호</span>
-                              <span className="col-span-3">{selectedInvoice.partner?.name || ''}</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">사업자번호</span>
-                              <span className="col-span-3">{selectedInvoice.partner?.businessNumber || ''}</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">대표자</span>
-                              <span className="col-span-3">{selectedInvoice.partner?.representative || ''}</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">주소</span>
-                              <span className="col-span-3">{selectedInvoice.partner?.address || ''}</span>
-                            </div>
-                            <div className="grid grid-cols-4">
-                              <span className="font-semibold">업태</span>
-                              <span className="col-span-3">{selectedInvoice.partner?.businessType || ''}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="border border-gray-300 mb-4">
-                      <div className="grid grid-cols-10 border-b border-gray-300 bg-gray-100 text-center font-semibold">
-                        <div className="p-2 border-r border-gray-300">일자</div>
-                        <div className="p-2 border-r border-gray-300 col-span-4">품목</div>
-                        <div className="p-2 border-r border-gray-300">규격</div>
-                        <div className="p-2 border-r border-gray-300">수량</div>
-                        <div className="p-2 border-r border-gray-300">단가</div>
-                        <div className="p-2 border-r border-gray-300">공급가액</div>
-                        <div className="p-2">세액</div>
-                      </div>
-                      
-                      <div className="grid grid-cols-10 text-center">
-                        <div className="p-2 border-r border-gray-300">{new Date(selectedInvoice.date).toLocaleDateString()}</div>
-                        <div className="p-2 border-r border-gray-300 col-span-4 text-left">
-                          {selectedInvoice.transaction 
-                            ? `${selectedInvoice.transaction.type === 'sale' ? '매출' : '매입'} - ${selectedInvoice.transaction.code}`
-                            : '일반 거래'
-                          }
-                        </div>
-                        <div className="p-2 border-r border-gray-300">-</div>
-                        <div className="p-2 border-r border-gray-300">1</div>
-                        <div className="p-2 border-r border-gray-300">-</div>
-                        <div className="p-2 border-r border-gray-300">{selectedInvoice.amount.toLocaleString()}</div>
-                        <div className="p-2">{selectedInvoice.taxAmount.toLocaleString()}</div>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-5 border border-gray-300">
-                      <div className="p-2 bg-gray-100 font-semibold text-center border-r border-gray-300">합계금액</div>
-                      <div className="p-2 text-right border-r border-gray-300 font-bold">
-                        {(selectedInvoice.amount + selectedInvoice.taxAmount).toLocaleString()}원
-                      </div>
-                      <div className="p-2 bg-gray-100 font-semibold text-center border-r border-gray-300">상태</div>
-                      <div className="p-2 col-span-2">
-                        <span className={getInvoiceStatusClass(selectedInvoice.status)}>
-                          {getInvoiceStatusText(selectedInvoice.status)}
-                        </span>
-                        {selectedInvoice.issuedAt && (
-                          <span className="ml-2 text-sm text-gray-500">
-                            발행일: {new Date(selectedInvoice.issuedAt).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                    <style>{`
+                      .tax-invoice-table { border-collapse: collapse; width: 100%; font-family: '돋움', Dotum, Arial, sans-serif; font-size: 12px; color: #0033cc; }
+                      .tax-invoice-table td { border: 1px solid #0033cc; text-align: center; padding: 2px 4px; height: 24px; }
+                      .tax-invoice-table .cell-title { font-size: 28px; font-weight: bold; letter-spacing: 16px; border: none; text-align: center; padding: 16px 0 8px 0; }
+                      .tax-invoice-table .cell-label { font-weight: bold; background: #fff; }
+                      .tax-invoice-table .cell-box { background: #fff; }
+                      .tax-invoice-table .cell-blank { border: none; background: #fff; }
+                    `}</style>
+                    <table className="tax-invoice-table">
+                      <tbody>
+                        <tr>
+                          <td className="cell-blank" colSpan={18} style={{ border: 'none', textAlign: 'left', fontSize: 11 }}>[별지 제11호 서식]</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-title" colSpan={18} style={{ color: '#0033cc', border: 'none', paddingBottom: 0 }}>세 금 계 산 서</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={3} rowSpan={2}>공급자</td>
+                          <td className="cell-label" colSpan={6}>등록번호</td>
+                          <td className="cell-label" colSpan={3} rowSpan={2}>공급받는자</td>
+                          <td className="cell-label" colSpan={6}>등록번호</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-box" colSpan={6}>{myCompany.businessNumber}</td>
+                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.businessNumber || ''; })()}</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={3}>상호(법인명)</td>
+                          <td className="cell-box" colSpan={6}>{myCompany.name}</td>
+                          <td className="cell-label" colSpan={3}>상호(법인명)</td>
+                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.name || ''; })()}</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={3}>성명</td>
+                          <td className="cell-box" colSpan={6}>{myCompany.contactName}</td>
+                          <td className="cell-label" colSpan={3}>성명</td>
+                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.contactName || ''; })()}</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={3}>사업장주소</td>
+                          <td className="cell-box" colSpan={6}>{myCompany.address}</td>
+                          <td className="cell-label" colSpan={3}>사업장주소</td>
+                          <td className="cell-box" colSpan={6}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.address || ''; })()}</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={3}>업태</td>
+                          <td className="cell-box" colSpan={3}>{myCompany.type}</td>
+                          <td className="cell-label" colSpan={3}>종목</td>
+                          <td className="cell-box" colSpan={3}>{myCompany.category}</td>
+                          <td className="cell-label" colSpan={3}>업태</td>
+                          <td className="cell-box" colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.type || ''; })()}</td>
+                          <td className="cell-label" colSpan={3}>종목</td>
+                          <td className="cell-box" colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return (partner as any)?.category || ''; })()}</td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={2}>작성년월일</td>
+                          <td className="cell-box" colSpan={2}>{new Date(selectedInvoice.date).getFullYear()}</td>
+                          <td className="cell-box" colSpan={1}>{new Date(selectedInvoice.date).getMonth() + 1}</td>
+                          <td className="cell-box" colSpan={1}>{new Date(selectedInvoice.date).getDate()}</td>
+                          <td className="cell-label" colSpan={2}>공급가액</td>
+                          <td className="cell-box" colSpan={2}>{selectedInvoice.netAmount.toLocaleString()}</td>
+                          <td className="cell-label" colSpan={2}>세액</td>
+                          <td className="cell-box" colSpan={2}>{selectedInvoice.taxAmount.toLocaleString()}</td>
+                          <td className="cell-label" colSpan={2}>비고</td>
+                          <td className="cell-box" colSpan={2}></td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={2}>월일</td>
+                          <td className="cell-label" colSpan={3}>품목</td>
+                          <td className="cell-label" colSpan={2}>규격</td>
+                          <td className="cell-label" colSpan={2}>수량</td>
+                          <td className="cell-label" colSpan={2}>단가</td>
+                          <td className="cell-label" colSpan={2}>공급가액</td>
+                          <td className="cell-label" colSpan={2}>세액</td>
+                          <td className="cell-label" colSpan={2}>비고</td>
+                        </tr>
+                        {/* 품목 5줄(빈칸 포함) */}
+                        {[...Array(5)].map((_, idx) => (
+                          <tr key={idx}>
+                            <td className="cell-box" colSpan={2}>{idx === 0 ? `${new Date(selectedInvoice.date).getMonth() + 1}/${new Date(selectedInvoice.date).getDate()}` : ''}</td>
+                            <td className="cell-box" colSpan={3}>{idx === 0 ? (selectedInvoice.transactionId ? transactions.find(t => t.id === selectedInvoice.transactionId)?.code : '일반거래') : ''}</td>
+                            <td className="cell-box" colSpan={2}></td>
+                            <td className="cell-box" colSpan={2}>{idx === 0 ? 1 : ''}</td>
+                            <td className="cell-box" colSpan={2}></td>
+                            <td className="cell-box" colSpan={2}>{idx === 0 ? selectedInvoice.netAmount.toLocaleString() : ''}</td>
+                            <td className="cell-box" colSpan={2}>{idx === 0 ? selectedInvoice.taxAmount.toLocaleString() : ''}</td>
+                            <td className="cell-box" colSpan={2}></td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td className="cell-label" colSpan={3}>합계금액</td>
+                          <td className="cell-box" colSpan={3}>{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td>
+                          <td className="cell-label" colSpan={2}>현금</td>
+                          <td className="cell-box" colSpan={2}></td>
+                          <td className="cell-label" colSpan={2}>수표</td>
+                          <td className="cell-box" colSpan={2}></td>
+                          <td className="cell-label" colSpan={2}>어음</td>
+                          <td className="cell-box" colSpan={2}></td>
+                          <td className="cell-label" colSpan={2}>외상미수금</td>
+                          <td className="cell-box" colSpan={2}></td>
+                        </tr>
+                        <tr>
+                          <td className="cell-label" colSpan={18} style={{ textAlign: 'right', fontWeight: 'bold', fontSize: 13 }}>
+                            이 금액을 <span style={{ fontWeight: 'bold', fontSize: 15 }}>영수</span>함
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="cell-blank" colSpan={18} style={{ border: 'none', textAlign: 'left', fontSize: 11 }}>
+                            22226-28131일 '96.3.27승인 &nbsp; 인쇄용지(특급) 182mm×128mm
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 )}
                 
@@ -804,6 +895,9 @@ interface TaxInvoicesTableProps {
   onPreview: (invoice: TaxInvoice) => void;
   onStatusChange: (data: { id: number, status: string }) => void;
   onSubmitToTaxOffice: (id: number) => void;
+  onEdit: (invoice: TaxInvoice) => void;
+  onPublish: (invoice: TaxInvoice) => void;
+  onDelete: (id: number) => void;
 }
 
 function TaxInvoicesTable({ 
@@ -812,7 +906,10 @@ function TaxInvoicesTable({
   partners, 
   onPreview, 
   onStatusChange,
-  onSubmitToTaxOffice
+  onSubmitToTaxOffice,
+  onEdit,
+  onPublish,
+  onDelete
 }: TaxInvoicesTableProps) {
   return (
     <div className="rounded-md border">
@@ -854,47 +951,48 @@ function TaxInvoicesTable({
                   </span>
                 </TableCell>
                 <TableCell>{new Date(invoice.date).toLocaleDateString()}</TableCell>
-                <TableCell className="text-right">{invoice.amount.toLocaleString()}</TableCell>
+                <TableCell className="text-right">{invoice.netAmount.toLocaleString()}</TableCell>
                 <TableCell className="text-right">{invoice.taxAmount.toLocaleString()}</TableCell>
-                <TableCell className="text-right font-medium">{(invoice.amount + invoice.taxAmount).toLocaleString()}</TableCell>
+                <TableCell className="text-right font-medium">{(invoice.netAmount + invoice.taxAmount).toLocaleString()}</TableCell>
                 <TableCell>
                   <span className={`px-2 py-1 text-xs rounded-full ${getInvoiceStatusClass(invoice.status)}`}>
                     {getInvoiceStatusText(invoice.status)}
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => onPreview(invoice)}
-                      title="미리보기"
-                    >
-                      <Printer className="h-4 w-4" />
-                    </Button>
-                    
-                    {invoice.status === 'issued' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onSubmitToTaxOffice(invoice.id)}
-                        title="국세청 전송"
-                      >
-                        <Send className="h-4 w-4" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon">
+                        <MoreHorizontal className="h-4 w-4" />
                       </Button>
-                    )}
-                    
-                    {invoice.status === 'draft' && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onStatusChange({ id: invoice.id, status: 'issued' })}
-                        title="발행하기"
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem onClick={() => onPreview(invoice)}>
+                        <Printer className="mr-2 h-4 w-4" />
+                        미리보기
+                      </DropdownMenuItem>
+                      {invoice.status === 'draft' && (
+                        <>
+                          <DropdownMenuItem onClick={() => onEdit(invoice)}>
+                            <Pencil className="mr-2 h-4 w-4" />
+                            수정
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onPublish(invoice)}>
+                            <Download className="mr-2 h-4 w-4" />
+                            발행
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onDelete(invoice.id)} className="text-red-500">
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            삭제
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => toast({ title: '아직 지원되지 않는 기능입니다.', variant: 'destructive' })}>
+                            <Send className="mr-2 h-4 w-4" />
+                            국세청 전송
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
             ))

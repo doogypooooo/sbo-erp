@@ -242,6 +242,24 @@ export const taxInvoices = sqliteTable('tax_invoices', {
   createdBy: integer('created_by', { mode: 'number' }).references(() => users.id)
 });
 
+// 환경설정 테이블 (key-value, value는 JSON)
+export const settings = sqliteTable('settings', {
+  key: text('key').primaryKey(), // 예: 'company', 'theme', ...
+  value: text('value').notNull(), // JSON 문자열
+  updatedAt: text('updated_at').default("CURRENT_TIMESTAMP")
+});
+
+// 공급자(회사) 정보 스키마 및 타입
+export const companyInfoSchema = z.object({
+  businessNumber: z.string(),
+  name: z.string(),
+  contactName: z.string(),
+  address: z.string(),
+  type: z.string(),
+  category: z.string()
+});
+export type CompanyInfo = z.infer<typeof companyInfoSchema>;
+
 // Zod 스키마 생성
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,

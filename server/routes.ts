@@ -12,6 +12,7 @@ import { barcodesRouter } from "./api/barcodes";
 import { transactionsRouter } from "./api/transactions";
 import { UserRoleEnum, PartnerTypeEnum } from "@shared/schema";
 import { log } from "./vite";
+import { settingsRouter } from "./api/settings";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -173,6 +174,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // 회계/재무 API
   apiRouter.use("/accounting", accountingRouter);
+
+  // 환경설정 API
+  apiRouter.use("/settings", settingsRouter);
 
   // 거래(구매/입고) API
   apiRouter.use("/transactions", transactionsRouter);

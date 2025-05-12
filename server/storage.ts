@@ -1,4 +1,4 @@
-import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices } from "@shared/schema";
+import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings } from "@shared/schema";
 import type { 
   User, InsertUser, Permission, InsertPermission, Partner, InsertPartner, 
   Category, InsertCategory, Item, InsertItem, Barcode, InsertBarcode,
@@ -89,6 +89,7 @@ export interface IStorage {
   getTaxInvoices(type?: string): Promise<TaxInvoice[]>;
   getTaxInvoice(id: number): Promise<TaxInvoice | undefined>;
   updateTaxInvoice(id: number, taxInvoice: Partial<TaxInvoice>): Promise<TaxInvoice | undefined>;
+  deleteTaxInvoice(id: number): Promise<boolean>;
 
   // 계정과목 유형별 합계 집계 (재무제표용)
   getAccountSums(type: string, from?: string, to?: string, options?: { current?: boolean }): Promise<{ name: string, amount: number }[]>;
@@ -100,6 +101,10 @@ export interface IStorage {
 
   // 월별 매출/비용 집계
   getMonthlyRevenueExpenses(from: string, to: string): Promise<{ month: string, revenue: number, expenses: number }[]>;
+
+  // 환경설정 관리
+  getSetting<T = any>(key: string): Promise<T | null>;
+  setSetting<T = any>(key: string, value: T): Promise<void>;
 }
 
 // SQLiteStorage 구현
@@ -576,6 +581,11 @@ export class SQLiteStorage implements IStorage {
     return await this.getTaxInvoice(id);
   }
 
+  async deleteTaxInvoice(id: number): Promise<boolean> {
+    const result = await this.db.delete(taxInvoices).where(eq(taxInvoices.id, id));
+    return result.changes > 0;
+  }
+
   // 계정과목 유형별 합계 집계 (재무제표용)
   async getAccountSums(type: string, from?: string, to?: string, options?: { current?: boolean }): Promise<{ name: string, amount: number }[]> {
     // 계정과목 목록 조회 (유형별)
@@ -662,6 +672,27 @@ export class SQLiteStorage implements IStorage {
       }
     }
     return Array.from(monthlyMap.values()).sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  // 환경설정 관리
+  async getSetting<T = any>(key: string): Promise<T | null> {
+    const result = await this.db.select().from(settings).where(eq(settings.key, key));
+    if (result.length === 0) return null;
+    try {
+      return JSON.parse(result[0].value);
+    } catch {
+      return null;
+    }
+  }
+
+  async setSetting<T = any>(key: string, value: T): Promise<void> {
+    const strValue = JSON.stringify(value);
+    const exists = await this.db.select().from(settings).where(eq(settings.key, key));
+    if (exists.length > 0) {
+      await this.db.update(settings).set({ value: strValue, updatedAt: new Date().toISOString() }).where(eq(settings.key, key));
+    } else {
+      await this.db.insert(settings).values({ key, value: strValue, updatedAt: new Date().toISOString() });
+    }
   }
 }
 
