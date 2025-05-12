@@ -19,7 +19,7 @@ export default function Dashboard() {
   // 날짜 범위 상태
   const defaultDateRange = {
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-    to: new Date()
+    to: new Date(new Date().getFullYear(), new Date().getMonth()+1, 1)
   };
   
   const [dateRange, setDateRange] = useState<DateRange | undefined>(defaultDateRange);
@@ -30,7 +30,7 @@ export default function Dashboard() {
     queryFn: async () => {
       const from = dateRange?.from?.toISOString() || "";
       const to = dateRange?.to?.toISOString() || "";
-      
+
       const response = await fetch(`/api/dashboard?from=${from}&to=${to}`);
       
       if (!response.ok) {
@@ -48,7 +48,8 @@ export default function Dashboard() {
   
   // 새로고침 핸들러
   const handleRefresh = () => {
-    refetch();
+    //refetch();
+    window.location.reload()
   };
   
   // 임시 대시보드 데이터 (API 연동 전)
@@ -104,12 +105,7 @@ export default function Dashboard() {
                   <RefreshCcw className="mr-2 h-4 w-4" />
                 )}
                 새로고침
-              </Button>
-              
-              <DatePickerWithRange
-                dateRange={dateRange}
-                onDateRangeChange={handleDateRangeChange}
-              />
+              </Button>            
             </div>
           </div>
           

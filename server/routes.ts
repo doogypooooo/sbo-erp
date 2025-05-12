@@ -13,6 +13,7 @@ import { transactionsRouter } from "./api/transactions";
 import { UserRoleEnum, PartnerTypeEnum } from "@shared/schema";
 import { log } from "./vite";
 import { settingsRouter } from "./api/settings";
+import { dashboardRouter } from "./api/dashboard";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -182,37 +183,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   apiRouter.use("/transactions", transactionsRouter);
 
   // 대시보드 API
-  apiRouter.get("/dashboard", (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "로그인이 필요합니다." });
-
-    res.json({
-      sales: {
-        current: "32,450,000원",
-        previous: "28,800,000원",
-        change: "+12.5%",
-        isPositive: true
-      },
-      purchases: {
-        current: "18,720,000원",
-        previous: "17,280,000원",
-        change: "+8.3%",
-        isPositive: false
-      },
-      unpaid: {
-        current: "5,280,000원",
-        change: "+1,200,000원",
-        count: 4,
-        isPositive: false
-      },
-      liability: {
-        current: "3,450,000원",
-        change: "-860,000원",
-        count: 2,
-        isPositive: true
-      }
-    });
-  });
-
+ apiRouter.use("/dashboard", dashboardRouter);  
+  
   // 알림
   apiRouter.get("/notifications", (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "로그인이 필요합니다." });

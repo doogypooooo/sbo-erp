@@ -17,6 +17,7 @@ export default function TopItems() {
   const { data: topItems, isLoading } = useQuery({
     queryKey: ["/api/items/top"],
     queryFn: async () => {
+      
       const response = await fetch("/api/items/top");
       
       if (!response.ok) {
