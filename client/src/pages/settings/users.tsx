@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth, usePermission } from "@/hooks/use-auth";
@@ -121,6 +121,12 @@ export default function UsersPage() {
     },
     enabled: isAdmin && !!selectedUser && isPermissionDialogOpen
   });
+  
+  // Optimistic UI: 권한 체크박스 상태를 로컬에서 관리
+  const [localPermissions, setLocalPermissions] = useState<any[]>([]);
+  useEffect(() => {
+    setLocalPermissions(permissions || []);
+  }, [permissions]);
   
   // 새 사용자 추가 폼
   const addUserForm = useForm<z.infer<typeof userSchema>>({
@@ -288,38 +294,28 @@ export default function UsersPage() {
     setIsPermissionDialogOpen(true);
   };
   
-  // 권한 설정 핸들러
+  // 권한 설정 핸들러 (이제 서버 요청 없이 localPermissions만 변경)
   const handleSetPermission = (resource: string, action: string, value: boolean) => {
-    if (!selectedUser) return;
-    
-    // 현재 권한 찾기
-    const existingPermission = permissions?.find((p: any) => p.resource === resource);
-    const permissionData = {
-      userId: selectedUser.id,
-      resource,
-      canRead: existingPermission?.canRead || false,
-      canWrite: existingPermission?.canWrite || false,
-      canDelete: existingPermission?.canDelete || false,
-      canExport: existingPermission?.canExport || false
-    };
-    
-    // 해당 액션 권한 업데이트
-    switch (action) {
-      case "read":
-        permissionData.canRead = value;
-        break;
-      case "write":
-        permissionData.canWrite = value;
-        break;
-      case "delete":
-        permissionData.canDelete = value;
-        break;
-      case "export":
-        permissionData.canExport = value;
-        break;
+    const existingPermission = localPermissions.find((p: any) => p.resource === resource);
+    let newPermissions;
+    if (existingPermission) {
+      newPermissions = localPermissions.map((p: any) =>
+        p.resource === resource ? { ...p, ["can" + action.charAt(0).toUpperCase() + action.slice(1)]: value } : p
+      );
+    } else {
+      newPermissions = [
+        ...localPermissions,
+        {
+          resource,
+          canRead: false,
+          canWrite: false,
+          canDelete: false,
+          canExport: false,
+          ["can" + action.charAt(0).toUpperCase() + action.slice(1)]: value
+        }
+      ];
     }
-    
-    setPermissionMutation.mutate(permissionData);
+    setLocalPermissions(newPermissions);
   };
   
   // 권한 리소스 목록
@@ -338,6 +334,43 @@ export default function UsersPage() {
     { id: "users", name: "사용자 관리" },
     { id: "settings", name: "시스템 설정" }
   ];
+
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSavePermissions = async () => {
+    if (!selectedUser) return;
+    setIsSaving(true);
+    // 변경된 리소스만 추출
+    const changed = localPermissions.filter(local => {
+      const original = permissions?.find((p: any) => p.resource === local.resource);
+      return (
+        !original ||
+        original.canRead !== local.canRead ||
+        original.canWrite !== local.canWrite ||
+        original.canDelete !== local.canDelete ||
+        original.canExport !== local.canExport
+      );
+    });
+    try {
+      for (const perm of changed) {
+        await setPermissionMutation.mutateAsync({
+          userId: selectedUser.id,
+          resource: perm.resource,
+          canRead: perm.canRead,
+          canWrite: perm.canWrite,
+          canDelete: perm.canDelete,
+          canExport: perm.canExport,
+        });
+      }
+      toast({ title: "권한 설정 완료", description: "사용자 권한이 수정되었습니다." });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", selectedUser.id, "permissions"] });
+      setIsPermissionDialogOpen(false);
+    } catch (err: any) {
+      toast({ title: "권한 설정 실패", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -575,7 +608,7 @@ export default function UsersPage() {
                               <TableCell>{user.name}</TableCell>
                               <TableCell>{user.email || "-"}</TableCell>
                               <TableCell>
-                                <span className={`px-2 py-1 rounded-full text-xs ${user.role === "admin" ? "bg-primary bg-opacity-10 text-primary font-medium" : "bg-neutral-300 bg-opacity-10 text-neutral-300"}`}>
+                                <span className={`px-2 py-1 rounded-full text-xs ${user.role === "admin" ? "bg-primary bg-opacity-10 text-white font-medium" : "bg-neutral-300 bg-opacity-10 text-neutral-300"}`}>
                                   {user.role === "admin" ? "관리자" : "일반 사용자"}
                                 </span>
                               </TableCell>
@@ -850,7 +883,7 @@ export default function UsersPage() {
                         </div>
                         
                         {resourceList.map((resource) => {
-                          const permission = permissions?.find((p: any) => p.resource === resource.id) || {
+                          const permission = localPermissions?.find((p: any) => p.resource === resource.id) || {
                             canRead: false,
                             canWrite: false,
                             canDelete: false,
@@ -863,33 +896,25 @@ export default function UsersPage() {
                               <div className="flex justify-center">
                                 <Checkbox
                                   checked={permission.canRead}
-                                  onCheckedChange={(checked) => 
-                                    handleSetPermission(resource.id, "read", checked === true)
-                                  }
+                                  onCheckedChange={(checked) => handleSetPermission(resource.id, "read", checked === true)}
                                 />
                               </div>
                               <div className="flex justify-center">
                                 <Checkbox
                                   checked={permission.canWrite}
-                                  onCheckedChange={(checked) => 
-                                    handleSetPermission(resource.id, "write", checked === true)
-                                  }
+                                  onCheckedChange={(checked) => handleSetPermission(resource.id, "write", checked === true)}
                                 />
                               </div>
                               <div className="flex justify-center">
                                 <Checkbox
                                   checked={permission.canDelete}
-                                  onCheckedChange={(checked) => 
-                                    handleSetPermission(resource.id, "delete", checked === true)
-                                  }
+                                  onCheckedChange={(checked) => handleSetPermission(resource.id, "delete", checked === true)}
                                 />
                               </div>
                               <div className="flex justify-center">
                                 <Checkbox
                                   checked={permission.canExport}
-                                  onCheckedChange={(checked) => 
-                                    handleSetPermission(resource.id, "export", checked === true)
-                                  }
+                                  onCheckedChange={(checked) => handleSetPermission(resource.id, "export", checked === true)}
                                 />
                               </div>
                             </div>
@@ -899,6 +924,12 @@ export default function UsersPage() {
                     )}
                     
                     <DialogFooter>
+                      <Button
+                        onClick={handleSavePermissions}
+                        disabled={isSaving}
+                      >
+                        {isSaving ? "저장 중..." : "저장"}
+                      </Button>
                       <Button onClick={() => setIsPermissionDialogOpen(false)}>
                         닫기
                       </Button>
