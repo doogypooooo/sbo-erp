@@ -55,12 +55,12 @@ npm run build
 
 ### 애플리케이션 실행
 npm run start
-```
+
 
 공적으로 실행되면 웹 브라우저에서 `http://localhost:5000` 로 접속하여 SBO-ERP를 사용할 수 있습니다.
 
 
-
+```
 ## [기술 스택]
 - **프론트엔드:** React (TypeScript 권장)
 - **백엔드:** Node.js (Express 등)
@@ -201,8 +201,7 @@ npm run start
   - RESTful API, 인증/인가(JWT, OAuth 등), CRUD, 검색, 페이징, 정렬, 필터
 - **보안:**  
   - 데이터 암호화(비밀번호, 중요정보), 접근제어(IP, 권한), 감사로그, 개인정보 보호
-
-
+```
 
 
 
