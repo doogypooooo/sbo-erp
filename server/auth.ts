@@ -215,9 +215,15 @@ export function setupAuth(app: Express) {
         await storage.updateInventory(item.id, 10);
       }
 
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) return next(err);
-        
+        // 활동 로그 기록
+        await storage.addUserActivity({
+          userId: user.id,
+          action: "create",
+          target: `사용자 ${user.name}`,
+          description: "회원가입"
+        });
         // 비밀번호 필드 제거 후 응답
         const { password, ...userWithoutPassword } = user;
         res.status(201).json(userWithoutPassword);
@@ -239,6 +245,14 @@ export function setupAuth(app: Express) {
         // 마지막 로그인 시간 업데이트
         await storage.updateUser(user.id, { lastLogin: new Date().toISOString() });
         
+        // 활동 로그 기록
+        await storage.addUserActivity({
+          userId: user.id,
+          action: "login",
+          target: `사용자 ${user.name}`,
+          description: "로그인"
+        });
+        
         // 비밀번호 필드 제거 후 응답
         const { password, ...userWithoutPassword } = user;
         res.status(200).json(userWithoutPassword);
@@ -248,8 +262,18 @@ export function setupAuth(app: Express) {
 
   // 로그아웃 라우트
   app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
+    const user = req.user;
+    req.logout(async (err) => {
       if (err) return next(err);
+      // 활동 로그 기록
+      if (user) {
+        await storage.addUserActivity({
+          userId: user.id,
+          action: "logout",
+          target: `사용자 ${user.name}`,
+          description: "로그아웃"
+        });
+      }
       res.sendStatus(200);
     });
   });

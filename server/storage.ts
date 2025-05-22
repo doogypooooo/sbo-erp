@@ -1,4 +1,4 @@
-import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings } from "@shared/schema";
+import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings, userActivities } from "@shared/schema";
 import type { 
   User, InsertUser, Permission, InsertPermission, Partner, InsertPartner, 
   Category, InsertCategory, Item, InsertItem, Barcode, InsertBarcode,
@@ -105,6 +105,10 @@ export interface IStorage {
   // 환경설정 관리
   getSetting<T = any>(key: string): Promise<T | null>;
   setSetting<T = any>(key: string, value: T): Promise<void>;
+
+  // 사용자 활동 관리
+  addUserActivity(activity: { userId: number, action: string, target?: string, description?: string }): Promise<void>;
+  getUserActivities(): Promise<any[]>;
 }
 
 // SQLiteStorage 구현
@@ -693,6 +697,18 @@ export class SQLiteStorage implements IStorage {
     } else {
       await this.db.insert(settings).values({ key, value: strValue, updatedAt: new Date().toISOString() });
     }
+  }
+
+  // 사용자 활동 관리
+  async addUserActivity(activity: { userId: number, action: string, target?: string, description?: string }): Promise<void> {
+    await this.db.insert(userActivities).values({
+      ...activity,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  async getUserActivities(): Promise<any[]> {
+    return await this.db.select().from(userActivities).orderBy(userActivities.createdAt);
   }
 }
 

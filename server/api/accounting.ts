@@ -94,6 +94,12 @@ accountingRouter.post("/accounts", checkPermission('accounts', 'write'), async (
     }
     
     const account = await storage.createAccount(validationResult.data);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `계정과목 ${account.name}`,
+      description: "계정과목 등록"
+    });
     res.status(201).json(account);
   } catch (error) {
     next(error);
@@ -126,7 +132,33 @@ accountingRouter.put("/accounts/:id", checkPermission('accounts', 'write'), asyn
       return res.status(500).json({ message: "계정과목 정보 업데이트에 실패했습니다." });
     }
     
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `계정과목 ${updatedAccount.name}`,
+      description: "계정과목 수정"
+    });
+    
     res.json(updatedAccount);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// 계정과목 삭제
+accountingRouter.delete("/accounts/:id", checkPermission('accounts', 'delete'), async (req, res, next) => {
+  try {
+    const id = parseInt(req.params.id);
+    const account = await storage.getAccount(id);
+    const deleted = await storage.deleteAccount(id);
+    if (!deleted) return res.status(404).json({ message: "계정과목을 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `계정과목 ${account?.name || id}`,
+      description: "계정과목 삭제"
+    });
+    res.sendStatus(204);
   } catch (error) {
     next(error);
   }
@@ -293,6 +325,13 @@ accountingRouter.post("/vouchers", checkPermission('vouchers', 'write'), async (
     // 전표 항목 가져오기
     const voucherItems = await storage.getVoucherItems(voucher.id);
     
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `전표 ${voucher.code}`,
+      description: "전표 등록"
+    });
+    
     res.status(201).json({
       ...voucher,
       items: voucherItems
@@ -319,6 +358,12 @@ accountingRouter.put("/vouchers/:id", checkPermission('vouchers', 'write'), asyn
     }
     // 항목도 반환
     const items = await storage.getVoucherItems(voucherId);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `전표 ${updatedVoucher.code}`,
+      description: "전표 수정"
+    });
     res.json({ ...updatedVoucher, items });
   } catch (error) {
     next(error);
@@ -352,6 +397,13 @@ accountingRouter.put("/vouchers/:id/status", checkPermission('vouchers', 'write'
     }
     
     const updatedVoucher = await storage.updateVoucher(voucherId, { status });
+    
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `전표 ${updatedVoucher.code}`,
+      description: "전표 상태 변경"
+    });
     
     res.json(updatedVoucher);
   } catch (error) {
@@ -494,6 +546,13 @@ accountingRouter.post("/payments", checkPermission('payments', 'write'), async (
       partnerName: partner.name
     };
     
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `수금/지급 ${responseData.code}`,
+      description: "수금/지급 등록"
+    });
+    
     res.status(201).json(responseData);
   } catch (error) {
     next(error);
@@ -517,6 +576,13 @@ accountingRouter.put("/payments/:id", checkPermission('payments', 'write'), asyn
     if (!updated) {
       return res.status(500).json({ message: "수정에 실패했습니다." });
     }
+
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `수금/지급 ${updated.code}`,
+      description: "수금/지급 수정"
+    });
 
     res.json(updated);
   } catch (error) {
@@ -542,6 +608,13 @@ accountingRouter.put("/payments/:id/status", checkPermission('payments', 'write'
     
     const updatedPayment = await storage.updatePayment(paymentId, { status });
     
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `수금/지급 ${updatedPayment.code}`,
+      description: "수금/지급 상태 변경"
+    });
+    
     res.json(updatedPayment);
   } catch (error) {
     next(error);
@@ -560,6 +633,12 @@ accountingRouter.delete("/payments/:id", checkPermission('payments', 'write'), a
     if (!deleted) {
       return res.status(500).json({ message: "삭제에 실패했습니다." });
     }
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `수금/지급 ${payment.code}`,
+      description: "수금/지급 삭제"
+    });
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -706,6 +785,13 @@ accountingRouter.post("/tax-invoices", checkPermission('tax', 'write'), async (r
       partnerName: partner.name
     };
     
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `세금계산서 ${responseData.code}`,
+      description: "세금계산서 등록"
+    });
+    
     res.status(201).json(responseData);
   } catch (error) {
     next(error);
@@ -726,6 +812,12 @@ accountingRouter.patch("/tax-invoices/:id/status", checkPermission('tax', 'write
       return res.status(400).json({ message: "유효하지 않은 상태입니다." });
     }
     const updatedInvoice = await storage.updateTaxInvoice(invoiceId, { status });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `세금계산서 ${updatedInvoice.code}`,
+      description: "세금계산서 상태 변경"
+    });
     res.json(updatedInvoice);
   } catch (error) {
     next(error);
@@ -744,6 +836,12 @@ accountingRouter.delete("/tax-invoices/:id", checkPermission('tax', 'delete'), a
     if (!deleted) {
       return res.status(500).json({ message: "세금계산서 삭제에 실패했습니다." });
     }
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `세금계산서 ${invoice.code}`,
+      description: "세금계산서 삭제"
+    });
     res.status(204).end();
   } catch (error) {
     next(error);
@@ -763,6 +861,12 @@ accountingRouter.patch("/tax-invoices/:id", checkPermission('tax', 'write'), asy
     if (!updatedInvoice) {
       return res.status(500).json({ message: "세금계산서 정보 업데이트에 실패했습니다." });
     }
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `세금계산서 ${updatedInvoice.code}`,
+      description: "세금계산서 부분 수정"
+    });
     res.json(updatedInvoice);
   } catch (error) {
     next(error);

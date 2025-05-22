@@ -5,6 +5,27 @@ import { hashPassword } from "../auth"; // auth.ts 파일에서 함수 export �
 
 export const usersRouter = Router();
 
+// 활동 로그 조회 (관리자만)
+usersRouter.get("/activities", async (req, res, next) => {
+  try {
+    if (!req.isAuthenticated() || req.user.role !== "admin") {
+      return res.status(403).json({ message: "권한이 없습니다." });
+    }
+    const activities = await storage.getUserActivities();
+    // userId 또는 id → 이름 매핑
+    const userIds = [...new Set(activities.map(a => a.userId || a.id))];
+    const users = await storage.getUsers();
+    const userMap = Object.fromEntries(users.map(u => [u.id, u.name]));
+    const activitiesWithName = activities.map(a => ({
+      ...a,
+      userName: userMap[a.userId || a.id] || `ID:${a.userId || a.id}`
+    }));
+    res.json(activitiesWithName);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // 사용자 목록 조회 (관리자만)
 usersRouter.get("/", async (req, res, next) => {
   try {
@@ -90,6 +111,20 @@ usersRouter.put("/:id", async (req, res, next) => {
       return res.status(500).json({ message: "사용자 정보 업데이트에 실패했습니다." });
     }
 
+    // 활동 로그 기록
+    let action = "update";
+    let description = "사용자 정보 수정";
+    if (Object.prototype.hasOwnProperty.call(updateData, "isActive")) {
+      action = updateData.isActive ? "activate" : "deactivate";
+      description = updateData.isActive ? "사용자 활성화" : "사용자 비활성화";
+    }
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action,
+      target: `사용자 ${updatedUser.name}`,
+      description
+    });
+
     // 비밀번호 제외하고 반환
     const { password, ...safeUser } = updatedUser;
     res.json(safeUser);
@@ -135,6 +170,14 @@ usersRouter.post("/:id/permissions", async (req, res, next) => {
     const permission = await storage.setUserPermission({
       userId,
       ...req.body
+    });
+
+    // 활동 로그 기록
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "permission_change",
+      target: `사용자 ${user.name}`,
+      description: `권한 변경: ${req.body.resource}`
     });
 
     res.status(201).json(permission);

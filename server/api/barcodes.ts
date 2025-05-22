@@ -51,25 +51,36 @@ barcodesRouter.get("/", checkPermission('read'), async (req, res, next) => {
   }
 });
 
+// 바코드 등록
+barcodesRouter.post("/", checkPermission('write'), async (req, res, next) => {
+  try {
+    const barcode = await storage.createBarcode(req.body);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `바코드 ${barcode.barcode}`,
+      description: "바코드 등록"
+    });
+    res.status(201).json(barcode);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // 바코드 삭제
 barcodesRouter.delete("/:id", checkPermission('delete'), async (req, res, next) => {
   try {
     const barcodeId = parseInt(req.params.id);
-    // 바코드 존재 확인
-    let found = false;
-    const allItems = await storage.getItems();
-    for (const item of allItems) {
-      const barcodes = await storage.getBarcodesByItem(item.id);
-      if (barcodes.some(b => b.id === barcodeId)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      return res.status(404).json({ message: "바코드를 찾을 수 없습니다." });
-    }
-    await storage.deleteBarcode(barcodeId);
-    res.status(204).end();
+    const barcode = await storage.getBarcodeByValue(req.body.barcode);
+    const deleted = await storage.deleteBarcode(barcodeId);
+    if (!deleted) return res.status(404).json({ message: "바코드를 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `바코드 ${barcode?.barcode || barcodeId}`,
+      description: "바코드 삭제"
+    });
+    res.sendStatus(204);
   } catch (error) {
     next(error);
   }

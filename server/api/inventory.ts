@@ -209,3 +209,19 @@ inventoryRouter.get("/alerts/low", checkPermission('read'), async (req, res, nex
     next(error);
   }
 });
+
+// 재고 등록/수정
+inventoryRouter.post("/", checkPermission('write'), async (req, res, next) => {
+  try {
+    const inventory = await storage.updateInventory(req.body.itemId, req.body.quantity);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `재고 품목ID ${req.body.itemId}`,
+      description: "재고 등록/수정"
+    });
+    res.status(201).json(inventory);
+  } catch (error) {
+    next(error);
+  }
+});

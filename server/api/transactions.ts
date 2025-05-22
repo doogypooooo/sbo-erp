@@ -24,26 +24,19 @@ function logErrorToFile(message: string, err: any) {
 export const transactionsRouter = Router();
 
 // 거래 등록
-transactionsRouter.post("/", async (req, res) => {
-
-  const transaction = req.body;
-  // partner_id를 숫자로 변환
-  transaction.partner_id = Number(transaction.partner_id);
-  // 날짜 파싱 (입고일자)
-  transaction.date = transaction.date || new Date().toISOString();
-  // 구매번호, 거래처명, 상태 기본값 보장
-  transaction.code = transaction.code || `P-${Date.now()}`;
-  transaction.partnerName = transaction.partnerName || "";
-  transaction.status = transaction.status || "pending";
+transactionsRouter.post("/", async (req, res, next) => {
   try {
-    const tx = await storage.createTransaction(transaction, transaction.items || []);
-    res.status(201).json({ message: "거래가 저장되었습니다.", transaction: tx });
-  } catch (err: any) {
-    logErrorToFile("[POST /api/transactions] DB ERROR:", err);
-    if (err?.message && err.message.startsWith('재고 부족')) {
-      return res.status(400).json({ message: err.message });
-    }
-    res.status(500).json({ message: "거래 저장 중 오류가 발생했습니다." });
+    const { transaction, items } = req.body;
+    const created = await storage.createTransaction(transaction, items);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `거래 ${created.code}`,
+      description: "거래 등록"
+    });
+    res.status(201).json(created);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -65,15 +58,21 @@ transactionsRouter.get("/", async (req, res) => {
 });
 
 // 거래 삭제
-transactionsRouter.delete("/:id", async (req, res) => {
-  const id = Number(req.params.id);
+transactionsRouter.delete("/:id", async (req, res, next) => {
   try {
-    const ok = await storage.deleteTransaction(id);
-    if (!ok) return res.status(404).json({ message: "거래를 찾을 수 없습니다." });
-    res.json({ message: "거래가 삭제되었습니다." });
-  } catch (err) {
-    logErrorToFile("[DELETE /api/transactions/:id] DB ERROR:", err);
-    res.status(500).json({ message: "거래 삭제 중 오류가 발생했습니다." });
+    const id = parseInt(req.params.id);
+    const transaction = await storage.getTransaction(id);
+    const deleted = await storage.deleteTransaction(id);
+    if (!deleted) return res.status(404).json({ message: "거래를 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `거래 ${transaction?.code || id}`,
+      description: "거래 삭제"
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -89,23 +88,20 @@ transactionsRouter.get("/:id/items", async (req, res) => {
 });
 
 // 거래 수정
-transactionsRouter.put("/:id", async (req, res) => {
-  const id = Number(req.params.id);
-  const transaction = req.body;
-  // partnerId를 숫자로 변환
-  transaction.partnerId = Number(transaction.partnerId ?? transaction.partner_id);
-  transaction.date = transaction.date || new Date().toISOString();
-  transaction.status = transaction.status || "pending";
+transactionsRouter.put("/:id", async (req, res, next) => {
   try {
-    // 트랜잭션으로 처리: 본문 transaction, items 모두 갱신
-    const updated = await storage.updateTransaction(id, transaction);
-    res.json({ message: "거래가 수정되었습니다.", transaction: updated });
-  } catch (err: any) {
-    logErrorToFile("[PUT /api/transactions/:id] DB ERROR:", err);
-    if (err?.message && err.message.startsWith('재고 부족')) {
-      return res.status(400).json({ message: err.message });
-    }
-    res.status(500).json({ message: "거래 수정 중 오류가 발생했습니다." });
+    const id = parseInt(req.params.id);
+    const updated = await storage.updateTransaction(id, req.body);
+    if (!updated) return res.status(404).json({ message: "거래를 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `거래 ${updated.code}`,
+      description: "거래 수정"
+    });
+    res.json(updated);
+  } catch (error) {
+    next(error);
   }
 });
 

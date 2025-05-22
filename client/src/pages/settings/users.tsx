@@ -372,6 +372,17 @@ export default function UsersPage() {
     }
   };
 
+  // 활동 로그 데이터 쿼리 추가
+  const { data: activities, isLoading: isActivitiesLoading } = useQuery({
+    queryKey: ["/api/users/activities"],
+    queryFn: async () => {
+      const response = await fetch("/api/users/activities");
+      if (!response.ok) throw new Error("활동 로그를 불러오는데 실패했습니다.");
+      return response.json();
+    },
+    enabled: isAdmin,
+  });
+
   return (
     <div className="flex h-screen overflow-hidden">
       <Sidebar />
@@ -690,33 +701,32 @@ export default function UsersPage() {
                   <div className="bg-white rounded-lg shadow p-6">
                     <h3 className="text-lg font-medium mb-4">활동 로그</h3>
                     <p className="text-muted-foreground mb-4">사용자들의 시스템 활동 기록입니다.</p>
-                    
-                    {/* 활동 로그 예시 */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-4 pb-4 border-b">
-                        <div className="flex-1">
-                          <p className="font-medium">관리자</p>
-                          <p className="text-sm text-muted-foreground">사용자 '홍길동' 추가</p>
-                        </div>
-                        <p className="text-sm text-muted-foreground">2023-12-10 15:30</p>
+                    {isActivitiesLoading ? (
+                      <div className="flex justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
-                      
-                      <div className="flex items-center gap-4 pb-4 border-b">
-                        <div className="flex-1">
-                          <p className="font-medium">홍길동</p>
-                          <p className="text-sm text-muted-foreground">거래처 '(주)가나상사' 수정</p>
-                        </div>
-                        <p className="text-sm text-muted-foreground">2023-12-09 10:15</p>
+                    ) : activities && activities.length > 0 ? (
+                      <div className="space-y-4">
+                        {activities.map((log: any) => (
+                          <div key={log.id} className="flex items-center gap-4 pb-4 border-b">
+                            <div className="flex-1">
+                              <p className="font-medium">{log.userName || log.userId || log.id}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {log.action} {log.target ? `- ${log.target}` : ""}
+                              </p>
+                              <p className="text-xs">{log.description}</p>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {log.createdAt ? new Date(log.createdAt).toLocaleString() : "-"}
+                            </p>
+                          </div>
+                        ))}
                       </div>
-                      
-                      <div className="flex items-center gap-4 pb-4 border-b">
-                        <div className="flex-1">
-                          <p className="font-medium">관리자</p>
-                          <p className="text-sm text-muted-foreground">시스템 설정 변경</p>
-                        </div>
-                        <p className="text-sm text-muted-foreground">2023-12-08 16:45</p>
+                    ) : (
+                      <div className="text-center text-muted-foreground py-8">
+                        활동 로그가 없습니다.
                       </div>
-                    </div>
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>

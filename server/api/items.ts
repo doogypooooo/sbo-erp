@@ -132,59 +132,13 @@ itemsRouter.get("/:id", checkPermission('read'), async (req, res, next) => {
 // 품목 등록
 itemsRouter.post("/", checkPermission('write'), async (req, res, next) => {
   try {
-    const itemData = req.body;
-    
-    // Zod로 검증
-    const validationResult = insertItemSchema.safeParse({
-      ...itemData,
-      createdBy: req.user.id
+    const item = await storage.createItem(req.body);
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "create",
+      target: `품목 ${item.name}`,
+      description: "품목 등록"
     });
-    
-    if (!validationResult.success) {
-      return res.status(400).json({ 
-        message: "입력 데이터가 유효하지 않습니다.", 
-        errors: validationResult.error.errors 
-      });
-    }
-    
-    // 품목코드 중복 확인
-    const existingItems = await storage.getItems();
-    const duplicate = existingItems.find(i => i.code === itemData.code);
-    
-    if (duplicate) {
-      return res.status(400).json({ message: "이미 등록된 품목코드입니다." });
-    }
-    
-    // 카테고리 존재 확인
-    if (itemData.categoryId) {
-      const category = await storage.getCategories().then(
-        cats => cats.find(c => c.id === itemData.categoryId)
-      );
-      
-      if (!category) {
-        return res.status(400).json({ message: "존재하지 않는 분류입니다." });
-      }
-    }
-    
-    const item = await storage.createItem({
-      ...validationResult.data,
-      createdBy: req.user.id
-    });
-    
-    // 바코드 등록 (있는 경우)
-    if (itemData.barcode) {
-      await storage.createBarcode({
-        itemId: item.id,
-        barcode: itemData.barcode,
-        isActive: true
-      });
-    }
-    
-    // 초기 재고 설정
-    if (itemData.initialStock) {
-      await storage.updateInventory(item.id, parseInt(itemData.initialStock));
-    }
-    
     res.status(201).json(item);
   } catch (error) {
     next(error);
@@ -195,40 +149,15 @@ itemsRouter.post("/", checkPermission('write'), async (req, res, next) => {
 itemsRouter.put("/:id", checkPermission('write'), async (req, res, next) => {
   try {
     const itemId = parseInt(req.params.id);
-    const itemData = req.body;
-    
-    const item = await storage.getItem(itemId);
-    if (!item) {
-      return res.status(404).json({ message: "품목을 찾을 수 없습니다." });
-    }
-    
-    // 품목코드 중복 확인 (변경된 경우에만)
-    if (itemData.code && itemData.code !== item.code) {
-      const existingItems = await storage.getItems();
-      const duplicate = existingItems.find(i => i.code === itemData.code && i.id !== itemId);
-      
-      if (duplicate) {
-        return res.status(400).json({ message: "이미 등록된 품목코드입니다." });
-      }
-    }
-    
-    // 카테고리 존재 확인
-    if (itemData.categoryId && itemData.categoryId !== item.categoryId) {
-      const category = await storage.getCategories().then(
-        cats => cats.find(c => c.id === itemData.categoryId)
-      );
-      
-      if (!category) {
-        return res.status(400).json({ message: "존재하지 않는 분류입니다." });
-      }
-    }
-    
-    const updatedItem = await storage.updateItem(itemId, itemData);
-    if (!updatedItem) {
-      return res.status(500).json({ message: "품목 정보 업데이트에 실패했습니다." });
-    }
-    
-    res.json(updatedItem);
+    const updated = await storage.updateItem(itemId, req.body);
+    if (!updated) return res.status(404).json({ message: "품목을 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "update",
+      target: `품목 ${updated.name}`,
+      description: "품목 수정"
+    });
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -238,20 +167,16 @@ itemsRouter.put("/:id", checkPermission('write'), async (req, res, next) => {
 itemsRouter.delete("/:id", checkPermission('delete'), async (req, res, next) => {
   try {
     const itemId = parseInt(req.params.id);
-    
     const item = await storage.getItem(itemId);
-    if (!item) {
-      return res.status(404).json({ message: "품목을 찾을 수 없습니다." });
-    }
-    
-    // TODO: 해당 품목과 연관된 거래가 있는지 확인 후 삭제 여부 결정
-    
     const deleted = await storage.deleteItem(itemId);
-    if (!deleted) {
-      return res.status(500).json({ message: "품목 삭제에 실패했습니다." });
-    }
-    
-    res.status(204).end();
+    if (!deleted) return res.status(404).json({ message: "품목을 찾을 수 없습니다." });
+    await storage.addUserActivity({
+      userId: req.user.id,
+      action: "delete",
+      target: `품목 ${item?.name || itemId}`,
+      description: "품목 삭제"
+    });
+    res.sendStatus(204);
   } catch (error) {
     next(error);
   }

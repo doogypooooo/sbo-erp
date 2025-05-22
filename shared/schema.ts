@@ -397,6 +397,16 @@ export const insertTaxInvoiceSchema = createInsertSchema(taxInvoices).pick({
   createdBy: true
 });
 
+// 사용자 활동 로그 테이블
+export const userActivities = sqliteTable('user_activities', {
+  id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+  userId: integer('user_id', { mode: 'number' }).references(() => users.id),
+  action: text('action').notNull(), // ex: 'create', 'update', 'login', 'permission_change'
+  target: text('target'), // ex: '사용자 홍길동', '권한 변경'
+  description: text('description'),
+  createdAt: text('created_at').default("CURRENT_TIMESTAMP"),
+});
+
 // 타입 정의
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -441,3 +451,5 @@ export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 
 export type TaxInvoice = typeof taxInvoices.$inferSelect;
 export type InsertTaxInvoice = z.infer<typeof insertTaxInvoiceSchema>;
+
+export type UserActivity = typeof userActivities.$inferSelect;
