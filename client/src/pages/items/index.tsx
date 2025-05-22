@@ -412,7 +412,6 @@ export default function ItemsPage() {
                   <TableHead>단가(원)</TableHead>
                   <TableHead>원가(원)</TableHead>
                   <TableHead>단위</TableHead>
-                  <TableHead>현재고</TableHead>
                   <TableHead>상태</TableHead>
                   <TableHead className="text-right">관리</TableHead>
                 </TableRow>
@@ -441,7 +440,6 @@ export default function ItemsPage() {
                       <TableCell className="font-mono">{item.unitPrice.toLocaleString()}</TableCell>
                       <TableCell className="font-mono">{item.costPrice.toLocaleString()}</TableCell>
                       <TableCell>{item.unit || "-"}</TableCell>
-                      <TableCell className="font-mono">{item.stock || 0}</TableCell>
                       <TableCell>
                         <span className={`px-2 py-1 text-xs rounded-full ${item.isActive ? 'bg-success bg-opacity-10 text-success' : 'bg-destructive bg-opacity-10 text-white'}`}>
                           {item.isActive ? "활성" : "비활성"}
