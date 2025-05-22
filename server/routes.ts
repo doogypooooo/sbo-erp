@@ -16,6 +16,7 @@ import { settingsRouter } from "./api/settings";
 import { dashboardRouter } from "./api/dashboard";
 import { salesRouter } from "./api/sales";
 import { notificationsRouter } from "./api/notifications";
+import scheduledTasksRouter from "./api/scheduled-tasks";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -31,7 +32,6 @@ async function createDefaultAdminIfNeeded() {
         name: "관리자",
         email: "",
         role: UserRoleEnum.ADMIN,
-        isActive: true
       });
       
       // 관리자 권한 설정
@@ -194,33 +194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   apiRouter.use("/notifications", notificationsRouter);
 
   // 예정 작업
-  apiRouter.get("/tasks", (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "로그인이 필요합니다." });
-
-    res.json([
-      {
-        id: 1,
-        title: "세금계산서 발행",
-        description: "11월 판매건 세금계산서 발행",
-        dueDate: "2023-12-10T00:00:00",
-        status: "pending"
-      },
-      {
-        id: 2,
-        title: "공급업체 결제",
-        description: "다라마 공업 12월 결제",
-        dueDate: "2023-12-15T00:00:00",
-        status: "pending"
-      },
-      {
-        id: 3,
-        title: "재고 실사",
-        description: "월말 재고 실사 진행",
-        dueDate: "2023-12-30T00:00:00",
-        status: "pending"
-      }
-    ]);
-  });
+  apiRouter.use("/scheduled-tasks", scheduledTasksRouter);
 
   // 모든 API 경로에 /api 프리픽스 추가
   app.use("/api", apiRouter);

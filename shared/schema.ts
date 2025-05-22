@@ -1,6 +1,7 @@
 import { sqliteTable, text, integer, real, unique, primaryKey } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { sql } from 'drizzle-orm';
 
 // Enum 타입 정의
 export const UserRoleEnum = {
@@ -476,3 +477,13 @@ export type TaxInvoice = typeof taxInvoices.$inferSelect;
 export type InsertTaxInvoice = z.infer<typeof insertTaxInvoiceSchema>;
 
 export type UserActivity = typeof userActivities.$inferSelect;
+
+export const scheduledTasks = sqliteTable('scheduled_tasks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  description: text('description').notNull(),
+  createdAt: text('created_at').default("CURRENT_TIMESTAMP"), // Add timestamp for creation  
+  dueDate: text('due_date').default("CURRENT_TIMESTAMP") // ISO date string for the scheduled date (optional)
+});
+
+export type ScheduledTask = typeof scheduledTasks.$inferSelect;
+export type NewScheduledTask = typeof scheduledTasks.$inferInsert;

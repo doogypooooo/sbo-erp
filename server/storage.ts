@@ -1,11 +1,12 @@
-import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings, userActivities, notifications, userNotificationSettings } from "@shared/schema";
+import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings, userActivities, notifications, userNotificationSettings, scheduledTasks, NewScheduledTask } from "@shared/schema";
 import type { 
   User, InsertUser, Permission, InsertPermission, Partner, InsertPartner, 
   Category, InsertCategory, Item, InsertItem, Barcode, InsertBarcode,
   Inventory, InsertInventory, InventoryHistory, Transaction, InsertTransaction,
   TransactionItem, InsertTransactionItem, Account, InsertAccount,
   Voucher, InsertVoucher, VoucherItem, InsertVoucherItem,
-  Payment, InsertPayment, TaxInvoice, InsertTaxInvoice
+  Payment, InsertPayment, TaxInvoice, InsertTaxInvoice,
+  ScheduledTask
 } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
@@ -120,6 +121,12 @@ export interface IStorage {
   getUserNotificationSettings(userId: number): Promise<any[]>;
   // 알림 설정 변경
   setUserNotificationSetting(userId: number, type: string, enabled: boolean): Promise<void>;
+
+  // 예정된 작업 관리
+  getScheduledTasks(): Promise<ScheduledTask[]>;
+  addScheduledTask(task: NewScheduledTask): Promise<ScheduledTask>;
+  updateScheduledTask(id: number, task: Partial<NewScheduledTask>): Promise<ScheduledTask | undefined>;
+  deleteScheduledTask(id: number): Promise<boolean>;
 }
 
 // SQLiteStorage 구현
@@ -719,7 +726,7 @@ export class SQLiteStorage implements IStorage {
   }
 
   async getUserActivities(): Promise<any[]> {
-    return await this.db.select().from(userActivities).orderBy(userActivities.createdAt);
+    return await this.db.select().from(userActivities).orderBy(desc(userActivities.createdAt));
   }
 
   // 알림 생성
@@ -754,6 +761,26 @@ export class SQLiteStorage implements IStorage {
     } else {
       await this.db.insert(userNotificationSettings).values({ userId, type, enabled });
     }
+  }
+
+  // 예정된 작업 관리
+  async getScheduledTasks(): Promise<ScheduledTask[]> {
+    return await this.db.select().from(scheduledTasks).orderBy(desc(scheduledTasks.createdAt));
+  }
+
+  async addScheduledTask(task: NewScheduledTask): Promise<ScheduledTask> {
+    const inserted = await this.db.insert(scheduledTasks).values(task).returning();
+    return inserted[0];
+  }
+
+  async updateScheduledTask(id: number, task: Partial<NewScheduledTask>): Promise<ScheduledTask | undefined> {
+    await this.db.update(scheduledTasks).set(task).where(eq(scheduledTasks.id, id));
+    return await this.db.select().from(scheduledTasks).where(eq(scheduledTasks.id, id)).get();
+  }
+
+  async deleteScheduledTask(id: number): Promise<boolean> {
+    const result = await this.db.delete(scheduledTasks).where(eq(scheduledTasks.id, id)).run();
+    return result.changes > 0;
   }
 }
 
