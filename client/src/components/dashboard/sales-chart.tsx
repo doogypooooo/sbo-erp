@@ -34,16 +34,6 @@ export default function SalesChart() {
     }
   });
   
-  // 임시 차트 데이터 (API 연동 전)
-  const tempChartData = [
-    { name: '3월', 매출: 28500000, 매입: 16700000 },
-    { name: '4월', 매출: 30200000, 매입: 17500000 },
-    { name: '5월', 매출: 29700000, 매입: 17800000 },
-    { name: '6월', 매출: 31000000, 매입: 18200000 },
-    { name: '7월', 매출: 32450000, 매입: 18720000 },
-    { name: '8월', 매출: 33800000, 매입: 19100000 },
-  ];
-  
   // 기간 변경 핸들러
   const handlePeriodChange = (newPeriod: PeriodType) => {
     setPeriod(newPeriod);
@@ -92,7 +82,7 @@ export default function SalesChart() {
           ) : (
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={chartData || tempChartData}
+                data={chartData}
                 margin={{
                   top: 5,
                   right: 30,

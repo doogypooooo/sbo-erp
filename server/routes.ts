@@ -14,6 +14,7 @@ import { UserRoleEnum, PartnerTypeEnum } from "@shared/schema";
 import { log } from "./vite";
 import { settingsRouter } from "./api/settings";
 import { dashboardRouter } from "./api/dashboard";
+import { salesRouter } from "./api/sales";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -184,6 +185,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 대시보드 API
  apiRouter.use("/dashboard", dashboardRouter);  
+
+ //SalesChart
+ apiRouter.use("/sales", salesRouter);
+
+  // 로그인")
   
   // 알림
   apiRouter.get("/notifications", (req, res) => {
