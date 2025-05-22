@@ -13,19 +13,61 @@ import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Bell, Settings, LogOut, Languages, User } from "lucide-react";
 import { useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 export default function Header() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
-  const [notifications, setNotifications] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
   
-  // 알림 데이터 불러오기 (예시)
-  useEffect(() => {
-    // 실제 구현에서는 API 호출로 대체
-    setNotifications(3);
-  }, []);
+  // QueryClient 인스턴스 가져오기
+  const queryClient = useQueryClient();
+  
+  // 알림 데이터 불러오기
+  const { data: notificationsData, isLoading: isNotificationsLoading, error: notificationsError } = useQuery({
+    queryKey: ["/api/notifications"],
+    queryFn: async () => {
+      const response = await fetch("/api/notifications");
+      if (!response.ok) throw new Error("알림을 불러오는데 실패했습니다.");
+      return response.json();
+    },
+    enabled: !!user,
+    refetchInterval: 60000,
+  });
+  
+  // 알림 개수 계산
+  const unreadNotificationCount = notificationsData?.filter((n: any) => !n.isRead).length || 0;
+  
+  // 알림 읽음 처리 뮤테이션
+  const markAsReadMutation = useMutation({
+    mutationFn: async (notificationId: number) => {
+      const response = await fetch(`/api/notifications/${notificationId}/read`, {
+        method: 'POST',
+      });
+      if (!response.ok) throw new Error('알림 읽음 처리에 실패했습니다.');
+      return response.json();
+    },
+    onSuccess: () => {
+      // 성공 시 알림 목록 갱신
+      queryClient.invalidateQueries(["/api/notifications"]);
+    },
+  });
+
+  // 알림 클릭 시 읽음 처리 및 이동 (예시)
+  const handleNotificationClick = (notification: any) => {
+    if (!notification.isRead) {
+      markAsReadMutation.mutate(notification.id);
+    }
+    // 알림 타입에 따라 다른 페이지로 이동하는 로직 추가 (예: 재고 부족 알림 클릭 시 재고 페이지로 이동)
+    if (notification.type === 'stock_low') {
+       setLocation('/inventory');
+    } else if (notification.type === 'unpaid') {
+       // 미수금 알림 클릭 시 거래 목록 또는 미수금 상세 페이지로 이동
+       setLocation('/transactions?status=unpaid'); // 예시: 미수금 거래 목록으로 이동
+    }
+    // 다른 알림 타입에 대한 이동 로직 추가...
+  };
   
   // 로그아웃 핸들러
   const handleLogout = () => {
@@ -83,55 +125,50 @@ export default function Header() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">
                 <Bell className="h-5 w-5" />
-                {notifications > 0 && (
+                {unreadNotificationCount > 0 && (
                   <span className="absolute top-1 right-1 w-4 h-4 bg-destructive text-white text-xs rounded-full flex items-center justify-center">
-                    {notifications}
+                    {unreadNotificationCount}
                   </span>
                 )}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>알림</DropdownMenuLabel>
+              <DropdownMenuLabel>알림 ({unreadNotificationCount})</DropdownMenuLabel>
               <DropdownMenuSeparator />
               <div className="max-h-80 overflow-y-auto">
-                <DropdownMenuItem>
-                  <div className="flex space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-destructive bg-opacity-10 flex items-center justify-center text-destructive">
-                      <i className="mdi mdi-alert-circle"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm">재고 부족 알림: <span className="font-medium">무선 블루투스 이어폰</span> (현재 5개)</p>
-                      <p className="text-xs text-neutral-300 mt-1">2023-07-28 09:15:32</p>
-                    </div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <div className="flex space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary bg-opacity-10 flex items-center justify-center text-secondary">
-                      <i className="mdi mdi-clock"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm">미수금 기한 도래: <span className="font-medium">모바일프렌즈</span> (525,000원)</p>
-                      <p className="text-xs text-neutral-300 mt-1">2023-07-28 08:30:14</p>
-                    </div>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <div className="flex space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary bg-opacity-10 flex items-center justify-center text-primary">
-                      <i className="mdi mdi-cart"></i>
-                    </div>
-                    <div>
-                      <p className="text-sm">신규 주문 접수: <span className="font-medium">디지털월드</span> (12건)</p>
-                      <p className="text-xs text-neutral-300 mt-1">2023-07-27 16:45:50</p>
-                    </div>
-                  </div>
-                </DropdownMenuItem>
+                {isNotificationsLoading ? (
+                  <DropdownMenuItem disabled>알림 불러오는 중...</DropdownMenuItem>
+                ) : notificationsError ? (
+                  <DropdownMenuItem disabled>알림 불러오기 실패</DropdownMenuItem>
+                ) : notificationsData && notificationsData.length > 0 ? (
+                  notificationsData.map((notification: any) => (
+                    <DropdownMenuItem key={notification.id} onClick={() => handleNotificationClick(notification)}>
+                      <div className="flex space-x-3">
+                        <div className={`flex-shrink-0 w-8 h-8 rounded-full bg-opacity-10 flex items-center justify-center ${notification.type === 'stock_low' ? 'bg-destructive text-destructive' : notification.type === 'unpaid' ? 'bg-amber-500 text-amber-500' : 'bg-primary text-primary'}`}>
+                          {notification.type === 'stock_low' && <i className="mdi mdi-alert-circle"></i>}
+                          {notification.type === 'unpaid' && <i className="mdi mdi-cash-remove"></i>}
+                          {!['stock_low', 'unpaid'].includes(notification.type) && <i className="mdi mdi-information"></i>}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">{notification.title}</p>
+                          <p className={`text-xs mt-1 ${notification.isRead ? 'text-neutral-400' : 'text-neutral-700 font-medium'}`}>{notification.message}</p>
+                          <p className="text-xs text-neutral-300 mt-1">{new Date(notification.createdAt).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </DropdownMenuItem>
+                  ))
+                ) : (
+                  <DropdownMenuItem disabled>새로운 알림이 없습니다.</DropdownMenuItem>
+                )}
               </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-center text-primary">
-                모든 알림 보기
-              </DropdownMenuItem>
+              {notificationsData && notificationsData.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-center text-primary">
+                    모든 알림 보기
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           

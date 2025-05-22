@@ -407,6 +407,29 @@ export const userActivities = sqliteTable('user_activities', {
   createdAt: text('created_at').default("CURRENT_TIMESTAMP"),
 });
 
+// 시스템 알림 테이블
+export const notifications = sqliteTable('notifications', {
+  id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+  userId: integer('user_id', { mode: 'number' }).references(() => users.id),
+  type: text('type').notNull(), // 'stock_low', 'unpaid', 'system_error', 'db'
+  title: text('title').notNull(),
+  message: text('message').notNull(),
+  isRead: integer('is_read', { mode: 'boolean' }).default(false),
+  createdAt: text('created_at').default("CURRENT_TIMESTAMP"),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+
+// 유저별 알림 설정 테이블
+export const userNotificationSettings = sqliteTable('user_notification_settings', {
+  id: integer('id', { mode: 'number' }).primaryKey({ autoIncrement: true }),
+  userId: integer('user_id', { mode: 'number' }).references(() => users.id),
+  type: text('type').notNull(), // 알림 종류
+  enabled: integer('enabled', { mode: 'boolean' }).default(true),
+});
+
+export type UserNotificationSetting = typeof userNotificationSettings.$inferSelect;
+
 // 타입 정의
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;

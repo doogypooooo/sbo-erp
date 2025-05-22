@@ -15,6 +15,7 @@ import { log } from "./vite";
 import { settingsRouter } from "./api/settings";
 import { dashboardRouter } from "./api/dashboard";
 import { salesRouter } from "./api/sales";
+import { notificationsRouter } from "./api/notifications";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -184,41 +185,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   apiRouter.use("/transactions", transactionsRouter);
 
   // 대시보드 API
- apiRouter.use("/dashboard", dashboardRouter);  
+  apiRouter.use("/dashboard", dashboardRouter);  
 
- //SalesChart
- apiRouter.use("/sales", salesRouter);
+  //SalesChart
+  apiRouter.use("/sales", salesRouter);
 
-  // 로그인")
-  
-  // 알림
-  apiRouter.get("/notifications", (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ message: "로그인이 필요합니다." });
-
-    res.json([
-      {
-        id: 1,
-        type: "invoice",
-        title: "세금계산서 발행 필요",
-        description: "미발행 세금계산서 3건이 있습니다.",
-        date: "2023-12-05T10:30:00"
-      },
-      {
-        id: 2,
-        type: "inventory",
-        title: "재고 부족 알림",
-        description: "3개 품목의 재고가 최소 수량 이하로 떨어졌습니다.",
-        date: "2023-12-05T09:15:00"
-      },
-      {
-        id: 3,
-        type: "payment",
-        title: "미수금 알림",
-        description: "(주)가나상사의 미수금 기한이 3일 남았습니다.",
-        date: "2023-12-04T16:45:00"
-      }
-    ]);
-  });
+  // 알림 API
+  apiRouter.use("/notifications", notificationsRouter);
 
   // 예정 작업
   apiRouter.get("/tasks", (req, res) => {

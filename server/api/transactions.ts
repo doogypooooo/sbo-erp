@@ -34,6 +34,16 @@ transactionsRouter.post("/", async (req, res, next) => {
       target: `거래 ${created.code}`,
       description: JSON.stringify(req.body)
     });
+    // 미수금 알림 트리거 (판매 거래이고 상태가 미수/부분 수금일 경우)
+    if (created.type === 'sale' && (created.status === 'unpaid' || created.status === 'partial')) {
+      const partner = await storage.getPartner(created.partnerId);
+      await storage.addNotification({
+        userId: 1, // 담당자 userId (예시), 실제 환경에 맞게 매핑 필요
+        type: "unpaid",
+        title: "미수금 발생 알림",
+        message: `거래처 ${partner?.name || created.partnerId}에게 미수금이 발생했습니다. (거래 코드: ${created.code}, 금액: ${created.totalAmount})`
+      });
+    }
     res.status(201).json(created);
   } catch (error) {
     next(error);
@@ -99,6 +109,16 @@ transactionsRouter.put("/:id", async (req, res, next) => {
       target: `거래 ${updated.code}`,
       description: JSON.stringify(req.body)
     });
+    // 미수금 알림 트리거 (판매 거래이고 상태가 미수/부분 수금으로 변경될 경우)
+    if (updated.type === 'sale' && (updated.status === 'unpaid' || updated.status === 'partial')) {
+       const partner = await storage.getPartner(updated.partnerId);
+       await storage.addNotification({
+         userId: 1, // 담당자 userId (예시), 실제 환경에 맞게 매핑 필요
+         type: "unpaid",
+         title: "미수금 발생/변경 알림",
+         message: `거래처 ${partner?.name || updated.partnerId}의 미수금이 발생/변경되었습니다. (거래 코드: ${updated.code}, 금액: ${updated.totalAmount}, 상태: ${updated.status})`
+       });
+    }
     res.json(updated);
   } catch (error) {
     next(error);

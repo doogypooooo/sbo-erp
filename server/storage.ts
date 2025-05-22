@@ -1,4 +1,4 @@
-import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings, userActivities } from "@shared/schema";
+import { users, permissions, partners, categories, items, barcodes, inventory, inventoryHistory, transactions, transactionItems, accounts, vouchers, voucherItems, payments, taxInvoices, settings, userActivities, notifications, userNotificationSettings } from "@shared/schema";
 import type { 
   User, InsertUser, Permission, InsertPermission, Partner, InsertPartner, 
   Category, InsertCategory, Item, InsertItem, Barcode, InsertBarcode,
@@ -12,7 +12,7 @@ import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { db } from './db';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, desc } from 'drizzle-orm';
 
 const MemoryStore = createMemoryStore(session);
 
@@ -109,6 +109,17 @@ export interface IStorage {
   // 사용자 활동 관리
   addUserActivity(activity: { userId: number, action: string, target?: string, description?: string }): Promise<void>;
   getUserActivities(): Promise<any[]>;
+
+  // 알림 생성
+  addNotification(notification: { userId: number, type: string, title: string, message: string }): Promise<void>;
+  // 알림 목록 조회 (유저별)
+  getNotifications(userId: number): Promise<any[]>;
+  // 알림 읽음 처리
+  markNotificationRead(id: number): Promise<void>;
+  // 알림 설정 조회
+  getUserNotificationSettings(userId: number): Promise<any[]>;
+  // 알림 설정 변경
+  setUserNotificationSetting(userId: number, type: string, enabled: boolean): Promise<void>;
 }
 
 // SQLiteStorage 구현
@@ -709,6 +720,40 @@ export class SQLiteStorage implements IStorage {
 
   async getUserActivities(): Promise<any[]> {
     return await this.db.select().from(userActivities).orderBy(userActivities.createdAt);
+  }
+
+  // 알림 생성
+  async addNotification(notification: { userId: number, type: string, title: string, message: string }): Promise<void> {
+    await this.db.insert(notifications).values({
+      ...notification,
+      isRead: false,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  // 알림 목록 조회 (유저별)
+  async getNotifications(userId: number): Promise<any[]> {
+    return await this.db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt));
+  }
+
+  // 알림 읽음 처리
+  async markNotificationRead(id: number): Promise<void> {
+    await this.db.update(notifications).set({ isRead: true }).where(eq(notifications.id, id));
+  }
+
+  // 알림 설정 조회
+  async getUserNotificationSettings(userId: number): Promise<any[]> {
+    return await this.db.select().from(userNotificationSettings).where(eq(userNotificationSettings.userId, userId));
+  }
+
+  // 알림 설정 변경
+  async setUserNotificationSetting(userId: number, type: string, enabled: boolean): Promise<void> {
+    const exists = await this.db.select().from(userNotificationSettings).where(and(eq(userNotificationSettings.userId, userId), eq(userNotificationSettings.type, type)));
+    if (exists.length > 0) {
+      await this.db.update(userNotificationSettings).set({ enabled }).where(and(eq(userNotificationSettings.userId, userId), eq(userNotificationSettings.type, type)));
+    } else {
+      await this.db.insert(userNotificationSettings).values({ userId, type, enabled });
+    }
   }
 }
 

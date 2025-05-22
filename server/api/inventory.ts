@@ -137,6 +137,15 @@ inventoryRouter.post("/:itemId/adjust", checkPermission('write'), async (req, re
     const latestHistory = history.sort((a, b) => 
       new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime()
     )[0];
+    // 재고 부족 알림 트리거
+    if (item && item.minStockLevel && quantity < item.minStockLevel) {
+      await storage.addNotification({
+        userId: 1,
+        type: "stock_low",
+        title: "재고 부족 알림",
+        message: `품목 ${item.name}의 재고가 부족합니다. (현재: ${quantity}, 최소: ${item.minStockLevel})`
+      });
+    }
     res.json({
       item,
       stock: quantity,
@@ -220,6 +229,17 @@ inventoryRouter.post("/", checkPermission('write'), async (req, res, next) => {
       target: `재고 품목ID ${req.body.itemId}`,
       description: JSON.stringify(req.body)
     });
+    // 재고 부족 알림 트리거
+    const item = await storage.getItem(req.body.itemId);
+    if (item && item.minStockLevel && req.body.quantity < item.minStockLevel) {
+      // 담당자 userId는 실제 환경에 맞게 매핑 필요. 예시로 1번 유저에게 알림
+      await storage.addNotification({
+        userId: 1,
+        type: "stock_low",
+        title: "재고 부족 알림",
+        message: `품목 ${item.name}의 재고가 부족합니다. (현재: ${req.body.quantity}, 최소: ${item.minStockLevel})`
+      });
+    }
     res.status(201).json(inventory);
   } catch (error) {
     next(error);
