@@ -73,17 +73,17 @@ export default function TransactionTable() {
   const getStatusClass = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-primary bg-opacity-10 text-primary";
+        return "bg-primary text-primary-foreground"; // 배경색 primary, 글자색 흰색
       case "pending":
-        return "bg-neutral-300 bg-opacity-10 text-neutral-300";
+        return "bg-neutral-300 bg-opacity-10 text-neutral-700";
       case "unpaid":
-        return "bg-secondary bg-opacity-10 text-secondary";
+        return "bg-secondary text-secondary-foreground";
       case "partial":
-        return "bg-neutral-300 bg-opacity-10 text-neutral-300";
+        return "bg-neutral-300 bg-opacity-10 text-neutral-700";
       case "canceled":
-        return "bg-destructive bg-opacity-10 text-destructive";
+        return "bg-destructive text-destructive-foreground";
       default:
-        return "bg-neutral-300 bg-opacity-10 text-neutral-300";
+        return "bg-neutral-300 bg-opacity-10 text-neutral-700";
     }
   };
   
@@ -107,8 +107,8 @@ export default function TransactionTable() {
   // 거래 유형 스타일 클래스
   const getTypeClass = (type: string) => {
     return type === "sale" 
-      ? "bg-success bg-opacity-10 text-success" 
-      : "bg-destructive bg-opacity-10 text-destructive";
+      ? "bg-green-500 text-white" // 판매: 녹색 배경, 흰색 글자
+      : "bg-red-500 text-white"; // 구매: 빨간색 배경, 흰색 글자
   };
 
   return (

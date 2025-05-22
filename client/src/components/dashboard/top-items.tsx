@@ -14,11 +14,11 @@ interface TopItem {
 
 export default function TopItems() {
   // 인기 품목 데이터 조회
-  const { data: topItems, isLoading } = useQuery({
-    queryKey: ["/api/items/top"],
+  const { data: topItems, isLoading } = useQuery<TopItem[]>({
+    queryKey: ["/api/dashboard/top-selling-items"],
     queryFn: async () => {
       
-      const response = await fetch("/api/items/top");
+      const response = await fetch("/api/dashboard/top-selling-items");
       
       if (!response.ok) {
         throw new Error("인기 품목 데이터를 불러오는데 실패했습니다.");
@@ -28,15 +28,6 @@ export default function TopItems() {
     }
   });
   
-  // 임시 인기 품목 데이터 (API 연동 전)
-  const tempTopItems: TopItem[] = [
-    { id: 1, name: '무선 블루투스 이어폰', quantity: 452, rank: 1 },
-    { id: 2, name: '스마트워치 충전기', quantity: 285, rank: 2 },
-    { id: 3, name: 'USB-C 고속 충전 케이블', quantity: 217, rank: 3 },
-    { id: 4, name: '보조배터리 20000mAh', quantity: 183, rank: 4 },
-    { id: 5, name: '스마트폰 강화유리', quantity: 154, rank: 5 },
-  ];
-
   return (
     <Card className="bg-white rounded-lg shadow">
       <CardContent className="p-6">
@@ -53,9 +44,9 @@ export default function TopItems() {
           <div className="flex justify-center items-center h-40">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : (
+        ) : topItems && topItems.length > 0 ? (
           <ul className="space-y-4">
-            {(topItems || tempTopItems).map((item) => (
+            {topItems.map((item) => (
               <li key={item.id} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
                   <span className={`w-6 h-6 rounded-full bg-primary ${item.rank > 1 ? `bg-opacity-${100 - (item.rank-1)*20}` : ''} flex items-center justify-center text-white text-xs`}>
@@ -67,6 +58,10 @@ export default function TopItems() {
               </li>
             ))}
           </ul>
+        ) : (
+          <div className="flex justify-center items-center h-40 text-gray-500">
+            데이터가 없습니다.
+          </div>
         )}
       </CardContent>
     </Card>

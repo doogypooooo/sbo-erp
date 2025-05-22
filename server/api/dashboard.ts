@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "../db";
-import { transactions } from "@shared/schema";
-import { sql } from "drizzle-orm";
+import { transactions, transactionItems, items } from "@shared/schema";
+import { sql, eq, sum, desc, and } from "drizzle-orm";
 
 export const dashboardRouter = Router();
 
@@ -17,50 +17,50 @@ dashboardRouter.get("/", async (req, res, next) => {
 
 
     // 매출 이전달
-    const salesPrevious = await db.select({ total: sql`IFNULL(SUM(total_amount),0)` })
+    const salesPrevious = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)` })
       .from(transactions)
       .where(sql`type = 'sale' AND date >= ${fromDateTime} AND date <= ${toDateTime}`)
       .then(rows => rows[0]?.total ?? 0);
 
     // 메츨 이번달
-    const salesCurrent = await db.select({ total: sql`IFNULL(SUM(total_amount),0)` })
+    const salesCurrent = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)` })
       .from(transactions)
       .where(sql`type = 'sale' AND date >= ${from} AND date <= ${to}`)
       .then(rows => rows[0]?.total ?? 0);    
 
     // 매입 이전달
-    const purchasesPrevious = await db.select({ total: sql`IFNULL(SUM(total_amount),0)` })
+    const purchasesPrevious = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)` })
       .from(transactions)
       .where(sql`type = 'purchase' AND date >= ${fromDateTime} AND date <= ${toDateTime}`)
       .then(rows => rows[0]?.total ?? 0);
 
     // 매입 이번달
-    const purchasesCurrent = await db.select({ total: sql`IFNULL(SUM(total_amount),0)` })
+    const purchasesCurrent = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)` })
       .from(transactions)
       .where(sql`type = 'purchase' AND date >= ${from} AND date <= ${to}`)
       .then(rows => rows[0]?.total ?? 0);      
 
 
     // 미수금 이전달 (예시: sale + status unpaid/partial)
-    const unpaidPrevious = await db.select({ total: sql`IFNULL(SUM(total_amount),0)` })
+    const unpaidPrevious = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)` })
       .from(transactions)
       .where(sql`type = 'sale' AND status IN ('unpaid', 'partial') AND created_at >= ${fromDateTime} AND created_at <= ${toDateTime} `)
       .then(rows => rows[0]?.total ?? 0);
 
     // 미수금 이번달
-    const unpaidCurrent = await db.select({ total: sql`IFNULL(SUM(total_amount),0)`  })
+    const unpaidCurrent = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)`  })
       .from(transactions)
       .where(sql`type = 'sale' AND status IN ('unpaid', 'partial') AND created_at >= ${from} AND created_at <= ${to} `)
       .then(rows => rows[0]?.total ?? 0);    
 
     // 미지급금 이전달(예시: purchase + status unpaid/partial)
-    const liabilityPrevious = await db.select({ total: sql`IFNULL(SUM(total_amount),0)`})
+    const liabilityPrevious = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)`})
       .from(transactions)
       .where(sql`type = 'purchase' AND status IN ('unpaid', 'partial')  AND created_at >= ${fromDateTime} AND created_at <= ${toDateTime} `)
       .then(rows => rows[0]?.total ?? 0);
 
       // 미지급금 이번달
-      const liabilityCurrent = await db.select({ total: sql`IFNULL(SUM(total_amount),0)`})
+      const liabilityCurrent = await db.select({ total: sql<number>`IFNULL(SUM(total_amount),0)`})
       .from(transactions)
       .where(sql`type = 'purchase' AND status IN ('unpaid', 'partial')  AND created_at >= ${from} AND created_at <= ${to} `)
       .then(rows => rows[0]?.total ?? 0);    
@@ -93,4 +93,41 @@ dashboardRouter.get("/", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-}); 
+});
+
+// 판매 상위 품목 조회 API
+dashboardRouter.get("/top-selling-items", async (req, res, next) => {
+  try {
+    const { from, to } = req.query as { from?: string, to?: string };
+
+    let query = db
+      .select({
+        itemId: items.id,
+        name: items.name,
+        quantity: sql<number>`CAST(SUM(${transactionItems.quantity}) AS INTEGER)`.as('quantity'),
+      })
+      .from(transactionItems)
+      .innerJoin(transactions, eq(transactionItems.transactionId, transactions.id))
+      .innerJoin(items, eq(transactionItems.itemId, items.id))
+      .where(eq(transactions.type, 'sale'));
+
+    if (from && to) {
+      query = query.where(and(sql`${transactions.date} >= ${from}`, sql`${transactions.date} <= ${to}`));
+    }
+
+    const topItems = await query
+      .groupBy(items.id, items.name)
+      .orderBy(desc(sql`quantity`))
+      .limit(5);
+
+    // 순위 추가
+    const topItemsWithRank = topItems.map((item, index) => ({
+      ...item,
+      rank: index + 1,
+    }));
+
+    res.json(topItemsWithRank);
+  } catch (error) {
+    next(error);
+  }
+});
