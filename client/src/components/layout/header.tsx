@@ -1,29 +1,46 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { Bell, Settings, LogOut, Languages, User } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+// Removed unused Dialog import
+// import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { SearchResultsModal } from "@/components/search/search-results-modal";
 
 export default function Header() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState<string>("");
-  
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [submittedQuery, setSubmittedQuery] = useState(''); // State to hold the query when search is submitted
+
   // QueryClient 인스턴스 가져오기
   const queryClient = useQueryClient();
-  
+
+  // Search data fetching
+  const { data: searchResults, isLoading: isSearchLoading, error: searchError } = useQuery({
+    queryKey: ['search', submittedQuery],
+    queryFn: async () => {
+      if (!submittedQuery) return { items: [], partners: [], transactions: [] };
+      const response = await fetch(`/api/search?q=${encodeURIComponent(submittedQuery)}`);
+      if (!response.ok) throw new Error('Search failed');
+      return response.json();
+    },
+    enabled: isSearchModalOpen && !!submittedQuery, // Only fetch when modal is open and query is submitted
+  });
+
   // 알림 데이터 불러오기
   const { data: notificationsData, isLoading: isNotificationsLoading, error: notificationsError } = useQuery({
     queryKey: ["/api/notifications"],
@@ -35,10 +52,10 @@ export default function Header() {
     enabled: !!user,
     refetchInterval: 60000,
   });
-  
+
   // 알림 개수 계산
   const unreadNotificationCount = notificationsData?.filter((n: any) => !n.isRead).length || 0;
-  
+
   // 알림 읽음 처리 뮤테이션
   const markAsReadMutation = useMutation({
     mutationFn: async (notificationId: number) => {
@@ -50,7 +67,7 @@ export default function Header() {
     },
     onSuccess: () => {
       // 성공 시 알림 목록 갱신
-      queryClient.invalidateQueries(["/api/notifications"]);
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
 
@@ -68,7 +85,7 @@ export default function Header() {
     }
     // 다른 알림 타입에 대한 이동 로직 추가...
   };
-  
+
   // 로그아웃 핸들러
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
@@ -78,7 +95,7 @@ export default function Header() {
       }
     });
   };
-  
+
   // 언어 변경 핸들러
   const changeLanguage = (language: string) => {
     // 언어 변경 로직 구현
@@ -87,15 +104,14 @@ export default function Header() {
       description: `언어가 ${language === 'ko' ? '한국어' : '영어'}로 변경되었습니다.`,
     });
   };
-  
+
   // 검색 핸들러
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      toast({
-        title: "검색 결과",
-        description: `"${searchQuery}"에 대한 검색 결과입니다.`,
-      });
+      setSubmittedQuery(searchQuery.trim()); // Set the query to trigger data fetching
+      setIsSearchModalOpen(true); // Open the modal
+      // setSearchQuery(""); // Optionally clear the search input after submitting
     }
   };
 
@@ -106,9 +122,9 @@ export default function Header() {
         <div className="flex-1 max-w-2xl mx-4">
           <form onSubmit={handleSearch}>
             <div className="relative">
-              <Input 
-                type="text" 
-                placeholder="검색어를 입력하세요 (품목, 거래처, 문서번호 등)" 
+              <Input
+                type="text"
+                placeholder="검색어를 입력하세요 (품목, 거래처, 문서번호 등)"
                 className="w-full py-2 pl-10"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -117,7 +133,7 @@ export default function Header() {
             </div>
           </form>
         </div>
-        
+
         {/* 우측: 알림 및 설정 */}
         <div className="flex items-center space-x-3">
           {/* 알림 버튼 */}
@@ -171,7 +187,7 @@ export default function Header() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          
+
           {/* 언어 선택 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -188,7 +204,7 @@ export default function Header() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          
+
           {/* 사용자 메뉴 */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -211,6 +227,15 @@ export default function Header() {
           </DropdownMenu>
         </div>
       </div>
+      {/* Search Results Modal */}
+      <SearchResultsModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        query={submittedQuery}
+        results={searchResults}
+        isLoading={isSearchLoading}
+        error={searchError}
+      />
     </header>
   );
 }

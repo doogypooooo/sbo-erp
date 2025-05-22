@@ -13,7 +13,7 @@ import createMemoryStore from "memorystore";
 import { log } from "./vite";
 import { db } from './db';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
-import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, or, sql } from 'drizzle-orm';
 
 const MemoryStore = createMemoryStore(session);
 
@@ -127,6 +127,13 @@ export interface IStorage {
   addScheduledTask(task: NewScheduledTask): Promise<ScheduledTask>;
   updateScheduledTask(id: number, task: Partial<NewScheduledTask>): Promise<ScheduledTask | undefined>;
   deleteScheduledTask(id: number): Promise<boolean>;
+
+  // 통합 검색
+  globalSearch(query: string): Promise<{
+    items: Item[];
+    partners: Partner[];
+    transactions: Transaction[];
+  }>;
 }
 
 // SQLiteStorage 구현
@@ -781,6 +788,52 @@ export class SQLiteStorage implements IStorage {
   async deleteScheduledTask(id: number): Promise<boolean> {
     const result = await this.db.delete(scheduledTasks).where(eq(scheduledTasks.id, id)).run();
     return result.changes > 0;
+  }
+
+  // 통합 검색
+  async globalSearch(query: string): Promise<{
+    items: Item[];
+    partners: Partner[];
+    transactions: Transaction[];
+  }> {
+    const lowerQuery = query.toLowerCase();
+
+    // 품목 검색 (코드 또는 이름에 검색어 포함)
+    const itemsResult = await this.db.select().from(items)
+      .where(
+        and(
+          items.isActive, // 활성 품목만 검색
+          or(
+            sql`lower(${items.code}) LIKE ${'%' + lowerQuery + '%'}`,
+            sql`lower(${items.name}) LIKE ${'%' + lowerQuery + '%'}`
+          )
+        )
+      );
+
+    // 거래처 검색 (이름, 사업자번호, 담당자, 주소 등에 검색어 포함)
+    const partnersResult = await this.db.select().from(partners)
+      .where(
+        and(
+          partners.isActive, // 활성 거래처만 검색
+           or(
+            sql`lower(${partners.name}) LIKE ${'%' + lowerQuery + '%'}`,
+            sql`lower(${partners.businessNumber}) LIKE ${'%' + lowerQuery + '%'}`,
+            sql`lower(${partners.contactName}) LIKE ${'%' + lowerQuery + '%'}`,
+            sql`lower(${partners.address}) LIKE ${'%' + lowerQuery + '%'}`
+           )
+        )
+      );
+
+    // 거래 검색 (코드 또는 노트에 검색어 포함)
+     const transactionsResult = await this.db.select().from(transactions)
+      .where(
+         or(
+          sql`lower(${transactions.code}) LIKE ${'%' + lowerQuery + '%'}`,
+          sql`lower(${transactions.notes}) LIKE ${'%' + lowerQuery + '%'}`
+         )
+      );
+
+    return { items: itemsResult, partners: partnersResult, transactions: transactionsResult };
   }
 }
 

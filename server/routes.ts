@@ -17,6 +17,7 @@ import { dashboardRouter } from "./api/dashboard";
 import { salesRouter } from "./api/sales";
 import { notificationsRouter } from "./api/notifications";
 import scheduledTasksRouter from "./api/scheduled-tasks";
+import searchRouter from "./api/search";
 
 // 개발용 기본 관리자 계정 생성
 async function createDefaultAdminIfNeeded() {
@@ -195,6 +196,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // 예정 작업
   apiRouter.use("/scheduled-tasks", scheduledTasksRouter);
+
+  // 통합 검색 API
+  apiRouter.use("/search", searchRouter);
 
   // 모든 API 경로에 /api 프리픽스 추가
   app.use("/api", apiRouter);
