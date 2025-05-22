@@ -98,7 +98,7 @@ accountingRouter.post("/accounts", checkPermission('accounts', 'write'), async (
       userId: req.user.id,
       action: "create",
       target: `계정과목 ${account.name}`,
-      description: "계정과목 등록"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(account);
   } catch (error) {
@@ -136,7 +136,7 @@ accountingRouter.put("/accounts/:id", checkPermission('accounts', 'write'), asyn
       userId: req.user.id,
       action: "update",
       target: `계정과목 ${updatedAccount.name}`,
-      description: "계정과목 수정"
+      description: JSON.stringify(req.body)
     });
     
     res.json(updatedAccount);
@@ -156,7 +156,7 @@ accountingRouter.delete("/accounts/:id", checkPermission('accounts', 'delete'), 
       userId: req.user.id,
       action: "delete",
       target: `계정과목 ${account?.name || id}`,
-      description: "계정과목 삭제"
+      description: JSON.stringify({ id })
     });
     res.sendStatus(204);
   } catch (error) {

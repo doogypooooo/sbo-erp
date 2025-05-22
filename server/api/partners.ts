@@ -71,7 +71,7 @@ partnersRouter.post("/", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "create",
       target: `거래처 ${partner.name}`,
-      description: "거래처 등록"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(partner);
   } catch (error) {
@@ -89,7 +89,7 @@ partnersRouter.put("/:id", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "update",
       target: `거래처 ${updated.name}`,
-      description: "거래처 수정"
+      description: JSON.stringify(req.body)
     });
     res.json(updated);
   } catch (error) {
@@ -108,7 +108,7 @@ partnersRouter.delete("/:id", checkPermission('delete'), async (req, res, next) 
       userId: req.user.id,
       action: "delete",
       target: `거래처 ${partner?.name || partnerId}`,
-      description: "거래처 삭제"
+      description: JSON.stringify({ partnerId })
     });
     res.sendStatus(204);
   } catch (error) {

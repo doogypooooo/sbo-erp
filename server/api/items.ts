@@ -137,7 +137,7 @@ itemsRouter.post("/", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "create",
       target: `품목 ${item.name}`,
-      description: "품목 등록"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(item);
   } catch (error) {
@@ -155,7 +155,7 @@ itemsRouter.put("/:id", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "update",
       target: `품목 ${updated.name}`,
-      description: "품목 수정"
+      description: JSON.stringify(req.body)
     });
     res.json(updated);
   } catch (error) {
@@ -174,7 +174,7 @@ itemsRouter.delete("/:id", checkPermission('delete'), async (req, res, next) => 
       userId: req.user.id,
       action: "delete",
       target: `품목 ${item?.name || itemId}`,
-      description: "품목 삭제"
+      description: JSON.stringify({ itemId })
     });
     res.sendStatus(204);
   } catch (error) {

@@ -218,7 +218,7 @@ inventoryRouter.post("/", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "update",
       target: `재고 품목ID ${req.body.itemId}`,
-      description: "재고 등록/수정"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(inventory);
   } catch (error) {

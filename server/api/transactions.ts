@@ -32,7 +32,7 @@ transactionsRouter.post("/", async (req, res, next) => {
       userId: req.user.id,
       action: "create",
       target: `거래 ${created.code}`,
-      description: "거래 등록"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(created);
   } catch (error) {
@@ -68,7 +68,7 @@ transactionsRouter.delete("/:id", async (req, res, next) => {
       userId: req.user.id,
       action: "delete",
       target: `거래 ${transaction?.code || id}`,
-      description: "거래 삭제"
+      description: JSON.stringify({ id })
     });
     res.sendStatus(204);
   } catch (error) {
@@ -97,7 +97,7 @@ transactionsRouter.put("/:id", async (req, res, next) => {
       userId: req.user.id,
       action: "update",
       target: `거래 ${updated.code}`,
-      description: "거래 수정"
+      description: JSON.stringify(req.body)
     });
     res.json(updated);
   } catch (error) {

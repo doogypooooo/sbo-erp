@@ -122,7 +122,7 @@ usersRouter.put("/:id", async (req, res, next) => {
       userId: req.user.id,
       action,
       target: `사용자 ${updatedUser.name}`,
-      description
+      description: JSON.stringify(updateData)
     });
 
     // 비밀번호 제외하고 반환
@@ -177,7 +177,7 @@ usersRouter.post("/:id/permissions", async (req, res, next) => {
       userId: req.user.id,
       action: "permission_change",
       target: `사용자 ${user.name}`,
-      description: `권한 변경: ${req.body.resource}`
+      description: JSON.stringify(req.body)
     });
 
     res.status(201).json(permission);

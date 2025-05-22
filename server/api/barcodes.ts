@@ -59,7 +59,7 @@ barcodesRouter.post("/", checkPermission('write'), async (req, res, next) => {
       userId: req.user.id,
       action: "create",
       target: `바코드 ${barcode.barcode}`,
-      description: "바코드 등록"
+      description: JSON.stringify(req.body)
     });
     res.status(201).json(barcode);
   } catch (error) {
@@ -78,7 +78,7 @@ barcodesRouter.delete("/:id", checkPermission('delete'), async (req, res, next) 
       userId: req.user.id,
       action: "delete",
       target: `바코드 ${barcode?.barcode || barcodeId}`,
-      description: "바코드 삭제"
+      description: JSON.stringify(req.body)
     });
     res.sendStatus(204);
   } catch (error) {
