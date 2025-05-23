@@ -871,113 +871,186 @@ export default function TaxInvoicesPage() {
                         <div className="w-full max-w-[600px] bg-white p-2 rounded shadow border overflow-x-auto" style={{ borderColor: color }}>
                           <style>{`
                             .tax-invoice-table-${border} { border-collapse: collapse; width: 100%; font-family: '돋움', Dotum, Arial, sans-serif; font-size: 12px; color: ${color}; }
-                            .tax-invoice-table-${border} th, .tax-invoice-table-${border} td { border: 2px solid ${color}; text-align: center; padding: 1px 2px; height: 20px; }
-                            .tax-invoice-table-${border} .title { font-size: 20px; font-weight: bold; letter-spacing: 8px; border: none; text-align: center; padding: 8px 0 4px 0; }
-                            .tax-invoice-table-${border} .sub-label { font-size: 12px; font-weight: bold; border: none; text-align: right; padding-right: 4px; }
-                            .tax-invoice-table-${border} .small { font-size: 10px; }
+                            .tax-invoice-table-${border} th, .tax-invoice-table-${border} td { border: 1px solid ${color}; text-align: center; padding: 1px; height: 20px; vertical-align: middle; }
+                            .tax-invoice-table-${border} .double-border-left { border-left: 2px solid ${color}; }
+                            .tax-invoice-table-${border} .double-border-right { border-right: 2px solid ${color}; }
+                            .tax-invoice-table-${border} .double-border-top { border-top: 2px solid ${color}; }
+                            .tax-invoice-table-${border} .double-border-bottom { border-bottom: 2px solid ${color}; }
+                            .tax-invoice-table-${border} .title { font-size: 22px; font-weight: bold; letter-spacing: 10px; border: none; text-align: center; padding: 10px 0 5px 0; height: auto; }
+                            .tax-invoice-table-${border} .sub-label { font-size: 10px; font-weight: bold; border: none; text-align: right; padding-right: 4px; height: auto; }
+                            .tax-invoice-table-${border} .small-text { font-size: 7pt; }
                             .tax-invoice-table-${border} .no-border { border: none !important; }
+                            .tax-invoice-table-${border} .text-left { text-align: left !important; padding-left: 3px; }
+                            .tax-invoice-table-${border} .text-right { text-align: right !important; padding-right: 3px; }
+                            .tax-invoice-table-${border} .text-center { text-align: center !important; }
+                            .tax-invoice-table-${border} .font-batang { font-family: '바탕', Batang, serif; }
+                            .tax-invoice-table-${border} .font-gulim { font-family: '굴림', Gulim, sans-serif; }
+                            .tax-invoice-table-${border} .pt-1 { padding-top: 1px; }
+                            .tax-invoice-table-${border} .item-row td { height: 20px; } /* Fixed height for item rows */
+                            .tax-invoice-table-${border} .header-cell { height: 22px; } 
                           `}</style>
-                          <div style={{maxHeight: '500px', overflowY: 'auto'}}>
-                            <table className={`tax-invoice-table-${border}`}> 
+                          <div style={{maxHeight: 'none', overflowY: 'auto'}}>
+                            <table className={`tax-invoice-table-${border}`}>
                               <tbody>
-                                <tr>
-                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'left' }}>[별지 제11호 서식]</td>
+                                <tr style={{height: '12pt'}}>
+                                  <td colSpan={33} className="no-border text-left small-text pt-1">[별지 제11호 서식]</td>
+                                </tr>
+                                <tr style={{height: '20.1pt'}}>
+                                  <td colSpan={15} rowSpan={2} className="title" style={{color: color, letterSpacing: border === 'blue' ? '10px' : '15px', fontSize: border === 'blue' ? '22pt': '22pt'}}>{border === 'blue' ? '세 금 계 산 서' : '세금계산서'}</td>
+                                  <td rowSpan={2} className="sub-label text-center" style={{color: color}}>(</td>
+                                  <td colSpan={5} className="sub-label text-center" style={{color: color, fontWeight: 'bold'}}>{label.includes('공급받는자') ? '공급받는자' : '공  급  자'}</td>
+                                  <td rowSpan={2} className="sub-label text-center" style={{color: color}}>)</td>
+                                  <td colSpan={4} className="header-cell">책&nbsp;&nbsp;&nbsp;번&nbsp;&nbsp;&nbsp;호</td>
+                                  <td className="header-cell"></td>
+                                  <td className="header-cell"></td>
+                                  <td className="header-cell font-gulim">권</td>
+                                  <td className="header-cell"></td>
+                                  <td className="header-cell"></td>
+                                  <td className="double-border-right header-cell font-gulim">호</td>
+                                </tr>
+                                <tr style={{height: '19.5pt'}}>
+                                  <td colSpan={5} className="sub-label text-center" style={{color: color, fontWeight: 'bold'}}>보&nbsp;&nbsp;관&nbsp;&nbsp;용</td>
+                                  <td colSpan={4} className="header-cell">일&nbsp;련&nbsp;번&nbsp;호</td>
+                                  <td colSpan={5} className="double-border-right header-cell text-left">{selectedInvoice.code}</td>
                                 </tr>
                                 <tr>
-                                  <td colSpan={16} className="title" style={{ color }}>{'세 금 계 산 서'}</td>
-                                </tr>
-                                <tr>
-                                  <td colSpan={16} className="no-border sub-label" style={{ color, textAlign: 'right', paddingBottom: 0 }}>
-                                    ({label})
+                                  <td rowSpan={8} className="double-border-left double-border-top double-border-bottom font-gulim" style={{writingMode: 'vertical-rl', width: '25px'}}>공&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;급&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;자</td>
+                                  <td colSpan={3} rowSpan={2} className="double-border-top header-cell">등록번호</td>
+                                  <td colSpan={11} rowSpan={2} className="double-border-top double-border-right header-cell text-left font-batang">
+                                    {myCompany.businessNumber?.split('').join(' ')}
+                                  </td>
+                                  <td rowSpan={8} className="double-border-left double-border-top double-border-bottom font-gulim" style={{writingMode: 'vertical-rl', width: '25px'}}>공급받는자</td>
+                                  <td colSpan={3} rowSpan={2} className="double-border-top header-cell">등록번호</td>
+                                  <td colSpan={11} rowSpan={2} className="double-border-top double-border-right header-cell text-left font-batang">
+                                    {(partners.find(p => p.id === selectedInvoice.partnerId)?.businessNumber || '')?.split('').join(' ')}
                                   </td>
                                 </tr>
-                                <tr>
-                                  <th rowSpan={2}>공급자<br/>등록번호</th>
-                                  <td rowSpan={2} colSpan={3}>{myCompany.businessNumber}</td>
-                                  <th rowSpan={2}>상호(법인명)</th>
-                                  <td rowSpan={2} colSpan={2}>{myCompany.name}</td>
-                                  <th rowSpan={2}>성명</th>
-                                  <td rowSpan={2}>{myCompany.contactName}</td>
-                                  <th rowSpan={2}>사업장주소</th>
-                                  <td rowSpan={2} colSpan={3}>{myCompany.address}</td>
-                                  <th rowSpan={2}>업태</th>
-                                  <td rowSpan={2}>{myCompany.type}</td>
-                                  <th rowSpan={2}>종목</th>
-                                  <td rowSpan={2}>{myCompany.category}</td>
-                                </tr>
                                 <tr></tr>
                                 <tr>
-                                  <th rowSpan={2}>공급받는자<br/>등록번호</th>
-                                  <td rowSpan={2} colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.businessNumber || ''; })()}</td>
-                                  <th rowSpan={2}>상호(법인명)</th>
-                                  <td rowSpan={2} colSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.name || ''; })()}</td>
-                                  <th rowSpan={2}>성명</th>
-                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.contactName || ''; })()}</td>
-                                  <th rowSpan={2}>사업장주소</th>
-                                  <td rowSpan={2} colSpan={3}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.address || ''; })()}</td>
-                                  <th rowSpan={2}>업태</th>
-                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return partner?.type || ''; })()}</td>
-                                  <th rowSpan={2}>종목</th>
-                                  <td rowSpan={2}>{(() => { const partner = partners.find(p => p.id === selectedInvoice.partnerId); return (partner as any)?.category || ''; })()}</td>
+                                  <td colSpan={3} className="header-cell">상&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+                                  <td colSpan={6} className="header-cell text-left">{myCompany.name}</td>
+                                  <td rowSpan={2} className="header-cell">성명</td>
+                                  <td colSpan={4} rowSpan={2} className="double-border-right header-cell text-left">{myCompany.contactName}</td>
+                                  <td colSpan={3} className="header-cell">상&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;호</td>
+                                  <td colSpan={6} className="header-cell text-left">{partners.find(p=>p.id === selectedInvoice.partnerId)?.name}</td>
+                                  <td rowSpan={2} className="header-cell">성명</td>
+                                  <td colSpan={4} rowSpan={2} className="double-border-right header-cell text-left">{partners.find(p=>p.id === selectedInvoice.partnerId)?.contactName}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="header-cell">(법인명)</td>
+                                  <td colSpan={6} className="text-left"></td>
+                                  <td colSpan={3} className="header-cell">(법인명)</td>
+                                  <td colSpan={6} className="text-left"></td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="header-cell">사&nbsp;업&nbsp;장</td>
+                                  <td colSpan={11} rowSpan={2} className="double-border-right header-cell text-left">{myCompany.address}</td>
+                                  <td colSpan={3} className="header-cell">사&nbsp;업&nbsp;장</td>
+                                  <td colSpan={11} rowSpan={2} className="double-border-right header-cell text-left">{partners.find(p=>p.id === selectedInvoice.partnerId)?.address}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="header-cell">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+                                  <td colSpan={3} className="header-cell">주&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;소</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} rowSpan={2} className="double-border-bottom header-cell">업&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;태</td>
+                                  <td colSpan={6} rowSpan={2} className="double-border-bottom header-cell text-left">{myCompany.type}</td>
+                                  <td rowSpan={2} className="double-border-bottom header-cell">종목</td>
+                                  <td colSpan={4} rowSpan={2} className="double-border-bottom double-border-right header-cell text-left">{myCompany.category}</td>
+                                  <td colSpan={3} rowSpan={2} className="double-border-bottom header-cell">업&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;태</td>
+                                  <td colSpan={6} rowSpan={2} className="double-border-bottom header-cell text-left">{partners.find(p=>p.id === selectedInvoice.partnerId)?.type}</td>
+                                  <td rowSpan={2} className="double-border-bottom header-cell">종목</td>
+                                  <td colSpan={4} rowSpan={2} className="double-border-bottom double-border-right header-cell text-left">{(partners.find(p => p.id === selectedInvoice.partnerId) as any)?.category || ''}</td>
                                 </tr>
                                 <tr></tr>
-                                <tr>
-                                  <th>작성년월일</th>
-                                  <td colSpan={2}>{new Date(selectedInvoice.date).getFullYear()}</td>
-                                  <td>{new Date(selectedInvoice.date).getMonth() + 1}</td>
-                                  <td>{new Date(selectedInvoice.date).getDate()}</td>
-                                  <th>공급가액</th>
-                                  <td colSpan={2}>{selectedInvoice.netAmount.toLocaleString()}</td>
-                                  <th>세액</th>
-                                  <td colSpan={2}>{selectedInvoice.taxAmount.toLocaleString()}</td>
-                                  <th colSpan={2}>비고</th>
-                                  <td colSpan={3}></td>
+                                <tr className="header-cell">
+                                  <td colSpan={4} className="double-border-left double-border-top font-gulim">작&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;성</td>
+                                  <td colSpan={13} className="double-border-top font-gulim">공&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;급&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;가&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;액</td>
+                                  <td colSpan={10} className="double-border-top font-gulim">세&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;액</td>
+                                  <td colSpan={5} className="double-border-top double-border-right font-gulim">비&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;고</td>
                                 </tr>
-                                <tr>
-                                  <th>월일</th>
-                                  <th colSpan={3}>품목</th>
-                                  <th colSpan={2}>규격</th>
-                                  <th>수량</th>
-                                  <th>단가</th>
-                                  <th colSpan={2}>공급가액</th>
-                                  <th colSpan={2}>세액</th>
-                                  <th colSpan={3}>비고</th>
+                                <tr className="font-gulim header-cell">
+                                  <td colSpan={2} className="double-border-left">년</td>
+                                  <td>월</td>
+                                  <td>일</td>
+                                  <td colSpan={2}>공란수</td>
+                                  <td>백</td>
+                                  <td>십</td>
+                                  <td>억</td>
+                                  <td>천</td>
+                                  <td>백</td>
+                                  <td>십</td>
+                                  <td>만</td>
+                                  <td>천</td>
+                                  <td>백</td>
+                                  <td>십</td>
+                                  <td>일</td>
+                                  <td>십</td>
+                                  <td>억</td>
+                                  <td>천</td>
+                                  <td>백</td>
+                                  <td>십</td>
+                                  <td>만</td>
+                                  <td>천</td>
+                                  <td>백</td>
+                                  <td>십</td>
+                                  <td>일</td>
+                                  <td colSpan={5} rowSpan={2} className="double-border-right double-border-bottom"></td>
                                 </tr>
-                                {[...Array(5)].map((_, idx) => (
-                                  <tr key={idx}>
-                                    <td>{idx === 0 ? `${new Date(selectedInvoice.date).getMonth() + 1}/${new Date(selectedInvoice.date).getDate()}` : ''}</td>
-                                    <td colSpan={3}>{idx === 0 ? (selectedInvoice.transactionId ? transactions.find(t => t.id === selectedInvoice.transactionId)?.code : '일반거래') : ''}</td>
-                                    <td colSpan={2}></td>
-                                    <td></td>
-                                    <td></td>
-                                    <td colSpan={2}>{idx === 0 ? selectedInvoice.netAmount.toLocaleString() : ''}</td>
-                                    <td colSpan={2}>{idx === 0 ? selectedInvoice.taxAmount.toLocaleString() : ''}</td>
-                                    <td colSpan={3}></td>
+                                <tr className="font-batang header-cell" style={{height: '15pt'}}>
+                                  <td colSpan={2} className="double-border-left double-border-bottom text-center">{selectedInvoice?.date ? new Date(selectedInvoice.date).getFullYear() : ''}</td>
+                                  <td className="double-border-bottom text-center">{selectedInvoice?.date ? new Date(selectedInvoice.date).getMonth() + 1 : ''}</td>
+                                  <td className="double-border-bottom text-center">{selectedInvoice?.date ? new Date(selectedInvoice.date).getDate() : ''}</td>
+                                  <td colSpan={2} className="double-border-bottom"></td> {/* 공란수 */}
+                                  {[...(selectedInvoice.netAmount.toString().padStart(12, ' '))].map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
+                                  {[...(selectedInvoice.taxAmount.toString().padStart(10, ' '))].map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
+                                </tr>
+                                <tr className="font-gulim header-cell">
+                                  <td className="double-border-left">월</td>
+                                  <td>일</td>
+                                  <td colSpan={6}>품&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;목</td>
+                                  <td colSpan={4}>규&nbsp;&nbsp;&nbsp;&nbsp;격</td>
+                                  <td colSpan={2}>수&nbsp;&nbsp;&nbsp;&nbsp;량</td>
+                                  <td colSpan={5}>단&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;가</td>
+                                  <td colSpan={6}>공&nbsp;&nbsp;급&nbsp;&nbsp;가&nbsp;&nbsp;액</td>
+                                  <td colSpan={5}>세&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;액</td>
+                                  <td colSpan={2} className="double-border-right">비고</td>
+                                </tr>
+                                {([...Array(4)]).map((_, idx) => (
+                                  <tr key={`item-${idx}`} className="item-row font-batang">
+                                    <td className="double-border-left">{idx === 0 && selectedInvoice?.date ? new Date(selectedInvoice.date).getMonth() + 1 : ''}</td>
+                                    <td>{idx === 0 && selectedInvoice?.date ? new Date(selectedInvoice.date).getDate() : ''}</td>
+                                    <td colSpan={6} className="text-left">
+                                      {idx === 0 ? (selectedInvoice.transactionId && transactions.find(t => t.id === selectedInvoice.transactionId)?.description) || '일반 거래 품목' : ''}
+                                    </td>
+                                    <td colSpan={4}></td> {/* 규격 */}
+                                    <td colSpan={2}></td> {/* 수량 */}
+                                    <td colSpan={5}></td> {/* 단가 */}
+                                    <td colSpan={6} className="text-right">{idx === 0 ? selectedInvoice.netAmount.toLocaleString() : ''}</td>
+                                    <td colSpan={5} className="text-right">{idx === 0 ? selectedInvoice.taxAmount.toLocaleString() : ''}</td>
+                                    <td colSpan={2} className="double-border-right"></td> {/* 비고 */}
                                   </tr>
                                 ))}
-                                <tr>
-                                  <th colSpan={8}>합계금액</th>
-                                  <td colSpan={2}>{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td>
-                                  <th colSpan={2}>현금</th>
-                                  <td colSpan={2}></td>
-                                  <th>수표</th>
-                                  <td></td>
+                                <tr className="font-gulim header-cell">
+                                  <td colSpan={5} className="double-border-left double-border-bottom">합&nbsp;계&nbsp;금&nbsp;액</td>
+                                  <td colSpan={5} className="double-border-bottom">현&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;금</td>
+                                  <td colSpan={5} className="double-border-bottom">수&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;표</td>
+                                  <td colSpan={5} className="double-border-bottom">어&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;음</td>
+                                  <td colSpan={5} className="double-border-bottom">외상미수금</td>
+                                  <td colSpan={4} rowSpan={2} className="double-border-bottom text-center">이 금액을</td>
+                                  <td colSpan={2} rowSpan={2} className="double-border-bottom text-center font-batang" style={{fontWeight: 'bold', fontSize: border === 'blue' ? '9pt' : '7pt'}}>영수<br/>청구</td>
+                                  <td rowSpan={2} className="double-border-right double-border-bottom text-center">함</td>
                                 </tr>
-                                <tr>
-                                  <th colSpan={8}>어음</th>
-                                  <td colSpan={2}></td>
-                                  <th colSpan={2}>외상미수금</th>
-                                  <td colSpan={4}></td>
+                                <tr className="font-batang header-cell" style={{height: '20.1pt'}}>
+                                  <td colSpan={5} className="double-border-left double-border-bottom text-right">{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td>
+                                  <td colSpan={5} className="double-border-bottom"></td> {/* 현금 */}
+                                  <td colSpan={5} className="double-border-bottom"></td> {/* 수표 */}
+                                  <td colSpan={5} className="double-border-bottom"></td> {/* 어음 */}
+                                  <td colSpan={5} className="double-border-bottom text-right">{(selectedInvoice.netAmount + selectedInvoice.taxAmount).toLocaleString()}</td> {/* 외상미수금 */}
                                 </tr>
-                                <tr>
-                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'right', fontWeight: 'bold' }}>
-                                    이 금액을 영수함
-                                  </td>
-                                </tr>
-                                <tr>
-                                  <td colSpan={16} className="no-border small" style={{ textAlign: 'left' }}>
-                                    22226-28131일 '96.3.27승인 &nbsp; 인쇄용지(특급) 182mm×128mm
-                                  </td>
+                                <tr style={{height: '12pt'}}>
+                                  <td colSpan={15} className="no-border text-left small-text double-border-left pt-1">22226-28131일 '96.3.27승인</td>
+                                  <td colSpan={17} className="no-border text-left small-text double-border-right pt-1">인쇄용지(특급)34g/m² 182mm×128mm</td>
                                 </tr>
                               </tbody>
                             </table>
