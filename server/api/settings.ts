@@ -12,8 +12,14 @@ export const settingsRouter = Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DB_PATH = path.join(__dirname, "../../database/erp.db");
-const BACKUP_DIR = path.join(__dirname, "../../database/backups");
+let DB_PATH = path.join(__dirname, "../database/erp.db");
+let BACKUP_DIR = path.join(__dirname, "../database/backups");
+
+if (process.env.NODE_ENV === "development") {
+  DB_PATH = path.join(__dirname, "../../database/erp.db");
+  BACKUP_DIR = path.join(__dirname, "../../database/backups");
+}
+
 const MAX_BACKUPS = 10;
 let backupInterval = 10; // 기본 10
 let backupUnit = 'minute'; // 기본 분
