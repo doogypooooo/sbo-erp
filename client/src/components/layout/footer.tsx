@@ -13,7 +13,8 @@ export default function Footer() {
           소상공인을 위한 무료 ERP 솔루션 (sbo-erp)
         </a>
       </p>
-      <p className="text-xs mt-1">© {new Date().getFullYear()} All rights reserved.</p>
+      <p className="text-xs mt-1">© {new Date().getFullYear()} doogypooooo All rights reserved.</p>
+      <p>Licensed under the <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener noreferrer">MIT License</a>.</p>
     </footer>
   );
 }
