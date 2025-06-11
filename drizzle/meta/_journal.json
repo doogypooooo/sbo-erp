@@ -71,6 +71,13 @@
       "when": 1747916299975,
       "tag": "0009_slow_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1749601649391,
+      "tag": "0010_easy_argent",
+      "breakpoints": true
     }
   ]
 }

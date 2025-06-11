@@ -5,8 +5,8 @@ server/public
 vite.config.ts.*
 *.tar.gz
 uploads
-server/logs/db-error.log
+server/logs/
 database/backups/
-database/erp.db
 database/erp.db-shm
 database/erp.db-wal
+drizzle/

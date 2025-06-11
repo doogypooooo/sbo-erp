@@ -48,11 +48,16 @@ import Footer from "@/components/layout/footer";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import axios from "axios";
 
+// TaxInvoice 타입에 taxRate를 추가 (schema.ts에 추가되었으므로 여기서는 확장하여 사용)
+interface ExtendedTaxInvoice extends TaxInvoice {
+  taxRate: number;
+}
+
 export default function TaxInvoicesPage() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedInvoice, setSelectedInvoice] = useState<TaxInvoice | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<ExtendedTaxInvoice | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   
@@ -73,16 +78,20 @@ export default function TaxInvoicesPage() {
   const [issuedDate, setIssuedDate] = useState<Date | undefined>(undefined);
   
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editInvoice, setEditInvoice] = useState<TaxInvoice | null>(null);
+  const [editInvoice, setEditInvoice] = useState<ExtendedTaxInvoice | null>(null);
   const [editType, setEditType] = useState('');
   
   useEffect(() => {
     if (isEditDialogOpen && editInvoice) {
-      // 타입 변환: DB 값이 'issue'/'receive'라면 'sales'/'purchase'로 변환
       let mappedType = editInvoice.type;
       if (editInvoice.type === 'issue') mappedType = 'sales';
       else if (editInvoice.type === 'receive') mappedType = 'purchase';
+      
       setEditType(mappedType);
+      setEditInvoice({
+        ...editInvoice,
+        taxRate: editInvoice.netAmount ? Math.round((editInvoice.taxAmount / editInvoice.netAmount) * 100) : 10
+      });
     }
   }, [isEditDialogOpen, editInvoice]);
   
@@ -198,7 +207,7 @@ export default function TaxInvoicesPage() {
   
   // 인쇄 핸들러
   const handlePrint = useReactToPrint({
-    content: () => printRef.current,
+    contentRef: printRef,
     documentTitle: '세금계산서',
     onAfterPrint: () => console.log('인쇄 완료')
   });
@@ -351,7 +360,7 @@ export default function TaxInvoicesPage() {
   
   // 세금계산서 미리보기
   const handlePreview = (invoice: TaxInvoice) => {
-    setSelectedInvoice(invoice);
+    setSelectedInvoice(invoice as ExtendedTaxInvoice);
     setIsPreviewOpen(true);
   };
   
@@ -362,7 +371,7 @@ export default function TaxInvoicesPage() {
 
   // 수정 핸들러
   const handleEdit = (invoice: TaxInvoice) => {
-    setEditInvoice(invoice);
+    setEditInvoice(invoice as ExtendedTaxInvoice);
     setIsEditDialogOpen(true);
   };
 
@@ -741,7 +750,7 @@ export default function TaxInvoicesPage() {
                       date: formData.get('date') as string,
                       partnerId: Number(formData.get('partnerId')),
                       netAmount: Number(formData.get('netAmount')),
-                      taxRate: Number(formData.get('taxRate')),
+                      taxRate: Number(formData.get('taxRate')), // taxRate 추가
                       taxAmount: Number(formData.get('taxAmount')),
                       totalAmount: Number(formData.get('totalAmount')),
                       status: editInvoice.status,
@@ -1002,8 +1011,8 @@ export default function TaxInvoicesPage() {
                                   <td className="double-border-bottom text-center">{selectedInvoice?.date ? new Date(selectedInvoice.date).getMonth() + 1 : ''}</td>
                                   <td className="double-border-bottom text-center">{selectedInvoice?.date ? new Date(selectedInvoice.date).getDate() : ''}</td>
                                   <td colSpan={2} className="double-border-bottom"></td> {/* 공란수 */}
-                                  {[...(selectedInvoice.netAmount.toString().padStart(12, ' '))].map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
-                                  {[...(selectedInvoice.taxAmount.toString().padStart(10, ' '))].map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
+                                  {Array.from(((selectedInvoice?.netAmount || 0).toString()).padStart(12, ' ')).map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
+                                  {Array.from(((selectedInvoice?.taxAmount || 0).toString()).padStart(10, ' ')).map((char, i) => <td key={i} className="double-border-bottom">{char === ' ' ? '' : char}</td>)}
                                 </tr>
                                 <tr className="font-gulim header-cell">
                                   <td className="double-border-left">월</td>
@@ -1021,7 +1030,7 @@ export default function TaxInvoicesPage() {
                                     <td className="double-border-left">{idx === 0 && selectedInvoice?.date ? new Date(selectedInvoice.date).getMonth() + 1 : ''}</td>
                                     <td>{idx === 0 && selectedInvoice?.date ? new Date(selectedInvoice.date).getDate() : ''}</td>
                                     <td colSpan={6} className="text-left">
-                                      {idx === 0 ? (selectedInvoice.transactionId && transactions.find(t => t.id === selectedInvoice.transactionId)?.description) || '일반 거래 품목' : ''}
+                                      {idx === 0 ? (selectedInvoice.transactionId && transactions.find(t => t.id === selectedInvoice.transactionId)?.notes) || '일반 거래 품목' : ''}
                                     </td>
                                     <td colSpan={4}></td> {/* 규격 */}
                                     <td colSpan={2}></td> {/* 수량 */}

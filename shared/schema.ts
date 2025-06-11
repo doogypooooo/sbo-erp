@@ -236,6 +236,7 @@ export const taxInvoices = sqliteTable('tax_invoices', {
   date: text('date').notNull(),
   type: text('type').notNull(), // issue, receive
   netAmount: real('net_amount').notNull(),
+  taxRate: real('tax_rate').notNull().default(10),
   taxAmount: real('tax_amount').notNull(),
   totalAmount: real('total_amount').notNull(),
   status: text('status').notNull(), // issued, canceled
@@ -392,6 +393,7 @@ export const insertTaxInvoiceSchema = createInsertSchema(taxInvoices).pick({
   date: true,
   type: true,
   netAmount: true,
+  taxRate: true,
   taxAmount: true,
   totalAmount: true,
   status: true,
